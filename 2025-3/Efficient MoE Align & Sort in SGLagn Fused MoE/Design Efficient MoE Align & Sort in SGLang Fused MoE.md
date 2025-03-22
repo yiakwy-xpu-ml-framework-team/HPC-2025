@@ -1,6 +1,6 @@
 > By fully enabling concurrent multiple blocks execution with arbitrary expert numbers (MAX_EXPERT_NUMBER==256), and with aggresive usage of shared memory (5kB LDS) and registers (52 VGPRs, 48 SGPRs), the MoE Align & Sort logics was crafted to achieve 📈3x in A100🎉, 📈3x in H200🎉, 📈10x in MI100🎉, and 📈7x in MI300X/Mi300A🎉: ...
 
-Author : LEI (yiak.wy@gmail.com)
+Author : LEI WANG (yiak.wy@gmail.com)
 
 ## Efficient MoE Align & Sort design in SGLang Fused MoE
 
@@ -92,7 +92,7 @@ In ROCm SDK 6.3.0, omniperf is rebranded as **rocprof-compute**. Dispite the act
 
 <br />
 
-Now, on chip overhead will be immedately reduced to **20W** from **41W** cycles after the optimization we proposed:
+Now, on chip overhead will be immedately reduced to **20W** from **41W** cycles after the [optimization we proposed](https://github.com/yiakwy-xpu-ml-framework-team/AMD-sglang-benchmark-fork/blob/790a832385a02d5f52ad627af333ca1c992e24de/sgl-kernel/src/sgl-kernel/csrc/moe_align_kernel.cu#L233)[PR#3613](https://github.com/sgl-project/sglang/pull/3613):
 
 <br />
 
@@ -390,6 +390,81 @@ We improved the vectorization codes and take care of loop tails if input data si
 
 The benchmarks show coalescing rate is improvmed but still limited to **30%**. We will work on it in V4 release. 
 
+## Benchmarks
+
+We conducted extensive tests without under CUDA graph capture for large workloads of deepseek v3 models. Hence the number of experts was set to 256. The algorithm currently does not support to be under cuda graph capture and we will resolve this issue later in V4 release.
+
+<br />
+
+Due to the virtualizaton of GPU machines and the number of CPU allocated for the test node, the performance may vary from time to time compared to bare metal tests. 
+
+<br />
+
+Hence we use triton implementation as baseline to demonstrate the acceleration multiple and efficiency of our proposed algorithm for MoE Align & Sort.
+
+<br />
+
+Each test was verifed first before benchmark. During the benchmark, we observed that triton in AMD platform runs signifcantly longer than that in NV at the time we tested. We hence recommend further optimization of triton MLIR for more efficient lowering process compared to NVDIA triton.
+
+<br />
+
+For AMD triton, we observed MI300X is 1.5x more faster, hence improvement multiple in MI300X is not significant as MI100. And morover, even MI300X is generally believe more faster than MI100, but in our test, the algorithm in MI100 performs better than in MI300X.
+
+It is partially attributed to the fact that for a memory bounded op, the communication among multiple dies chip lowering the speed of execution.
+
+<br />
+
+In the both platforms we observed significant improvements after applying our proposed algoirthm, where the exsting cuda implementaion almost costed the same time as Triton.
+
+
+<div id="mi100_bench"></div>
+#### Benchmark on MI100
+
+> git clone https://github.com/yiakwy-xpu-ml-framework-team/AMD-sglang-benchmark-fork.git -b optimize_moe_align_v3 && cd sgl-kernel && python setup_rocm.py install
+
+Feasibility across different combination of numbers input token and experts can be verified:
+
+> cd ../benchmark/kernels/fused_moe_trition && python benchmark_deepseekv3_moe_align_blocks.py --verify
+
+
+| num_tokens  | experts | SGLang    | Triton (AMD) | GPU  
+:------------:|:-------:|:---------:|:------------:|------
+8192          | 256     |   79.36   | 426.71       | MI100
+16384         | 256     |   86.4    | 681.12       | MI100
+16384 x 128   | 256     |   3047.68 | 62442.85     | MI100
+32768 x 128   | 256     |   7211.37 | 129388.43    | MI100
+
+
+<div id="a100_bench"></div>
+#### Benchmark on A100
+
+| num_tokens  | experts | SGLang     | Triton (NV) | GPU  
+:------------:|:-------:|:---------:|:------------:|------
+8192          | 256     |   77.44    | 124.92      | A100
+16384         | 256     |   \        | \           | A100
+16384 x 128   | 256     |   5966.81  | 17396.51    | A100
+32768 x 128   | 256     |   12450.05 | 34711.14    | A100
+
+<div id="h200_bench"></div>
+#### Benchmark on H200
+
+| num_tokens  | experts | SGLang     | Triton (NV) | GPU  
+:------------:|:-------:|:---------:|:------------:|------
+8192          | 256     |   \        | \           | H200
+16384         | 256     |   \        | \           | H200
+16384 x 128   | 256     |   4508.42  | 12361.15    | H200
+32768 x 128   | 256     |   9023.48  | 24683.70    | H200
+
+<div id="mi300_bench"></div>
+#### Benchmark on MI300X
+
+| num_tokens  | experts | SGLang     | Triton (NV) | GPU  
+:------------:|:-------:|:----------:|:-----------:|------
+8192          | 256     |   88.16    | 281.64      | MI300X
+16384         | 256     |   134.02   | 448.88      | MI300X
+16384 x 128   | 256     |   6865.64  | 43266.09    | MI300X
+32768 x 128   | 256     |   13431.80 | 89788.58    | MI300X
+
 <div id="amd-compute-profile"></div>
 ## AMD Compute Profile
 
@@ -404,9 +479,9 @@ The workload **16384** tokens x (top **8** out of **256** experts) unless otherw
 
 | kernel                                              | VGPRs | SGPRs| active CUs | Vector L1 cache hit rate | coalescing rate / utils
 :----------------------------------------------------:|:-----:|:----:|:----------:|:------------------------:|-----
-[old main](#) moe_align_block_size_kernel (k1)        | 20    | 48   | 3          | 0%                       | 25% / 7%
-[old main](#) count_and_sort_expert_tokens_kernel (k2)| 8     | 32   | 39         | 27%                      |
-[our](#) moe_align_block_size_kernel                  | 52    | 48   | 66         | 61%                      | 36% / 18%
+[old main](https://github.com/sgl-project/sglang/blob/fb8886037c32138e418cfc333baaef43b1e1f68b/sgl-kernel/csrc/moe/moe_align_kernel.cu#L44) moe_align_block_size_kernel (k1)        | 20    | 48   | 3          | 0%                       | 25% / 7%
+[old main](https://github.com/sgl-project/sglang/blob/fb8886037c32138e418cfc333baaef43b1e1f68b/sgl-kernel/csrc/moe/moe_align_kernel.cu#L28) count_and_sort_expert_tokens_kernel (k2)| 8     | 32   | 39         | 27%                      | NaN
+[our](https://github.com/yiakwy-xpu-ml-framework-team/AMD-sglang-benchmark-fork/blob/790a832385a02d5f52ad627af333ca1c992e24de/sgl-kernel/src/sgl-kernel/csrc/moe_align_kernel.cu#L233) moe_align_block_size_kernel                  | 52    | 48   | 66         | 61%                      | 36% / 18%
 
 We maximize the usage of VGPRs but reduce total usage of SGPRs in our algorithm. The data also indicates Zero VGPRs/SGPRs spills usage that healthy usage of registers and no performance panelty for this kernel. 
 
@@ -453,13 +528,13 @@ With multiple channels and address interleaving design, requests to L2 cache can
 
 ## Conclusion
 
-The new algorithm accelerate MoE Align & Sort in both CUDA and ROCm platform significantly up to 3x ~ 7x by maximize the usage of LDS and vector registers.
+The new algorithm accelerate MoE Align & Sort in both CUDA and ROCm platform significantly up to 3x ~ 7x by maximize the usage of LDS and vector registers. We observed memory bounded op may perform worse in a multiple die chip compared to a single die chip.
 
 However details of the algorithm can be still polished to improve cache hit rate and main memory coalecsing rate.
 
 ## Acknowledgement
 
-Special thanks to Prof Zhang Han, Doctor Wang HanJun from NUS team for collabration in MI100 verification, and Zev Rekhter in MI300X verication. 
+Special thanks to Prof Zhang Han (hanzhangqin8@gmail.com), Doctor Wang YunHong (yunhongwang2000@gmail.com) from NUS team for the collabration in MI100/MI250 performance verification, Zev Rekhter (Connect@reishi.ai) for the collabration in MI300X performance verification and Shuyi Fan for the collabration in H200 verification.
 
 ## Reference
 
