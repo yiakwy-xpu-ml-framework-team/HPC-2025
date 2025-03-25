@@ -78,7 +78,7 @@ We propose and write AMD-friendly CUDA kernels using our proposed MoE Align & So
 
 <br />
 
-By using **RocProfiler-Compute** for different workloads, we can clealy see that the first kernel takes **33W** cycles and second kernel takes **8W** cycles even without counting multiple kernels launch overhead in a trace profile :
+By using **RocProfiler-Compute** for different workloads, we can clearly see that the first kernel takes **33W** cycles and second kernel takes **8W** cycles even without counting multiple kernels launch overhead in a trace profile :
 
 <br />
 
@@ -99,7 +99,7 @@ In ROCm SDK 6.3.0, omniperf has been rebranded as **rocprof-compute**. Dispite t
 
 <br />
 
-Now, on chip overhead will be immedately reduced to **20W** cycles from last **41W** cycles after applying the [optimization we proposed](https://github.com/yiakwy-xpu-ml-framework-team/AMD-sglang-benchmark-fork/blob/790a832385a02d5f52ad627af333ca1c992e24de/sgl-kernel/src/sgl-kernel/csrc/moe_align_kernel.cu#L233) in [PR#3613](https://github.com/sgl-project/sglang/pull/3613):
+Now, on chip overhead will be immedately reduced to **20W** cycles from previous **41W** cycles after applying the [optimization we proposed](https://github.com/yiakwy-xpu-ml-framework-team/AMD-sglang-benchmark-fork/blob/790a832385a02d5f52ad627af333ca1c992e24de/sgl-kernel/src/sgl-kernel/csrc/moe_align_kernel.cu#L233) in [PR#3613](https://github.com/sgl-project/sglang/pull/3613):
 
 <br />
 
@@ -185,7 +185,7 @@ The SGLang [MoE](https://github.com/sgl-project/sglang/blob/8baf9a0c18c6bc700e89
 
 <br />
 
-Before the kernel launch, the MoE Align & Sort algorithm is applied. the MoE Align & Sort triton kernel is splitted into 4 phases where direct accesses to DRAM without shared memory are employed [vectorize triton operation](https://github.com/sgl-project/sglang/pull/2913).
+Before the kernel launch, the MoE Align & Sort algorithm is applied. the MoE Align & Sort triton kernel is splitted into 4 phases where direct accesses to DRAM without shared memory are employed contrast to the [vectorize triton version](https://github.com/sgl-project/sglang/pull/2913).
 
 <br />
 
@@ -193,7 +193,7 @@ Multiple launches and inefficient use of LDS, local caches, and registers (VGPR 
 
 <br />
 
-Then CUDA implementation is finally splitted into two phaeses and only the second phase execution is accelerated in multiple blocks.
+Then CUDA implementation is finally splitted into two phases and only the second phase execution is accelerated in multiple blocks.
 
 ## MoE Align & Sort CUDA Algorithm in other Open Source Platform
 
@@ -227,7 +227,7 @@ The first version of AMD friendly fused MoE was proposed in [CK#1634](https://gi
 
 <br />
 
-The high level idea is to fuse MoE sorting with Group GEMM. Adn MoE & Sorting largely employes SGLang's team approach.
+The high level idea is to fuse MoE sorting with Group GEMM. And MoE & Sorting in CK largely employes SGLang's team approach execept for CK pipliner and partitioner.
 
 <br />
 
@@ -313,15 +313,15 @@ CK_TILE_DEVICE void moe_align_block_size_kernel(...)
 
 <br />
 
-So MoE Align & Sort in the AMD CK solution alomost aligns with our implementation execept for codes scheduler of partitioner and pipliner. 
+So MoE Align & Sort in the AMD CK solution alomost aligns with SGLang main implementation execept for codes scheduler of partitioner and pipliner. 
 
 <br />
 
-Note the implementation does not always promises the best performance in AMD platform.
+Note the implementation does not always promises the best performance in AMD platform (see asm MoE in AITER).
 
 <br />
 
-Since AMD CDNA3 arch does not support **Graphcore** alike on-chip shuffling (we abstracted and generalized it as **Remapping** Op of PopART[12] & PopRT in 2023) magics, -- which was now supported in NVIDIA H100/H200/B200 throughout high efficient on chip **SM<->SM** communication.
+Since AMD CDNA3 arch does not support **Graphcore** alike on-chip shuffling (we abstracted and generalized on-chip shuffling as **Remapping** Op of PopART[12] & PopRT in 2023) magics, -- which was now supported in NVIDIA H100/H200/B200 throughout high efficient on chip **SM<->SM** communication.
 
 <br />
 
@@ -350,13 +350,13 @@ AITER was introduced at an early time of this year to incorporate LLM kernels us
 
 <br />
 
-Hence it is partially open source, yet not open since its development schedule is opaque to developers who hold MI300X. 
+Hence it is partially open source, since its development schedule is opaque to MI300X developers. 
 
 <br />
 
-The aleged 3x acceleration of fused MoE in AITER is essentail from that in a group GEMM with different shapes : a gemm where each expert's FFN weights mutliply a block of hidden states of tokens. 
+The aleged 3x acceleration [10] of fused MoE in AITER is veried by Bruce Xu [13] and is essentail from that in a group GEMM with different shapes : a gemm where each expert's FFN weights mutliply a block of hidden states of tokens.
 
-The asm gemm generates almost 3x improvements in [PR#199](https://github.com/ROCm/aiter/pull/199):
+The proof is that asm gemm generates almost 3x improvements in [PR#199](https://github.com/ROCm/aiter/pull/199):
 
 <br />
 
@@ -409,11 +409,19 @@ Notablly, there are still cases where triton kernels which adapted from SGLang c
     ...
 ```
 
-Besides, various of AMD chip intrinsics have been used, such as **__builtin_nontemporal_load**, **__builtin_amdgcn_ds_swizzle**, **__builtin_amdgcn_ds_permute**/**__builtin_amdgcn_ds_bpermute**, **_builtin_amdgcn_mov_dpp** and so on so forth was added into the repo for AMD specific optimization.
+Besides, various of AMD chip intrinsics have been used in CK fused MoE, such as 
+
+- **__builtin_nontemporal_load**, 
+
+- **__builtin_amdgcn_ds_swizzle**, 
+
+- **__builtin_amdgcn_ds_permute**/**__builtin_amdgcn_ds_bpermute**, 
+
+- **_builtin_amdgcn_mov_dpp** 
+
+and so on so forth. These are suspected to be attributed to the final asm version of fused MoE. 
 
 For example, with usage of **__builtin_nontemporal_load**, we can skip L2 cache and leave more spaces in L2 cacheline for the data predicted to be resued.
-
-To summary, in DeepSeekR1-Part2[10], the article claimed 3x improvement was achieved based for the kernel in AITER.
 
 #### Cutlass v3.8
 
@@ -553,6 +561,7 @@ In order to make best usage of AMD heteogenous system, it is recmmend to do some
 - When virtualizaton enabled, IOMMU pass-through mode is recommended to elimnitate DMA translation, hence to bring performance improvements
 
 <div id="mi100_bench"></div>
+
 #### Benchmark on MI100
 
 > git clone https://github.com/yiakwy-xpu-ml-framework-team/AMD-sglang-benchmark-fork.git -b optimize_moe_align_v3 && cd sgl-kernel && python setup_rocm.py install
@@ -571,7 +580,9 @@ Feasibility across different combination of numbers input token and experts can 
 
 
 <div id="a100_bench"></div>
+
 #### Benchmark on A100
+
 
 | num_tokens  | experts | SGLang     | Triton (NV) | GPU  
 :------------:|:-------:|:---------:|:------------:|------
@@ -580,7 +591,9 @@ Feasibility across different combination of numbers input token and experts can 
 16384 x 128   | 256     |   5966.81  | 17396.51    | A100
 32768 x 128   | 256     |   12450.05 | 34711.14    | A100
 
+
 <div id="h200_bench"></div>
+
 #### Benchmark on H200
 
 | num_tokens  | experts | SGLang     | Triton (NV) | GPU  
@@ -590,7 +603,9 @@ Feasibility across different combination of numbers input token and experts can 
 16384 x 128   | 256     |   4508.42  | 12361.15    | H200
 32768 x 128   | 256     |   9023.48  | 24683.70    | H200
 
+
 <div id="mi300_bench"></div>
+
 #### Benchmark on MI300X
 
 | num_tokens  | experts | SGLang     | Triton (NV) | GPU  
@@ -601,6 +616,7 @@ Feasibility across different combination of numbers input token and experts can 
 32768 x 128   | 256     |   13431.80 | 89788.58    | MI300X
 
 <div id="amd-compute-profile"></div>
+
 ## AMD Compute Profile
 
 #### Setup
@@ -691,7 +707,9 @@ However, details of the algorithm can be still polished to improve cache hit rat
 
 Special thanks to Prof Zhang Han (hanzhangqin8@gmail.com), Doctor Wang YunHong (yunhongwang2000@gmail.com) from NUS team for the collabration in MI100/MI250 performance verification, Zev Rekhter (Connect@reishi.ai) for the collabration in MI300X performance verification, [Shuyi Fan](fsygd1996@163.com) for the collabration in H200 verification and [BBuf](1182563586@qq.com) for discussion and review of the solution in the SGLang.
 
-Note this is also an indepent work from SGLang community. I Also express my deep thanks to Bingqing, Peng Sun and ShawHai who spare time in reviewing the article and suggestion in revision. 
+Note this is an indepent work from SGLang community. 
+
+I Also express my deep thanks to Bingqing, Peng Sun and ShawHai who spare time individually in reviewing the article and giving suggestions in revision. 
 
 ## Reference
 
