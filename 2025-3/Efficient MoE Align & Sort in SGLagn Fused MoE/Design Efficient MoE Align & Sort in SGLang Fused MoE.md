@@ -144,7 +144,7 @@ We also analyzed the roofline model of MoE Sort & Align. The roofline model show
 
 <br />
 
-In section [AMD Compute Profile](#amd_compute_profile), we gives details of the profiling data and analysis of our algorithm design and implementation in ROCm platform. 
+In section [AMD Compute Profile](#amd_compute_profile), we gives details of the profiling data and analysis of our algorithm design in ROCm platform. 
 
 <br />
 
@@ -223,7 +223,7 @@ SGLang uses many vLLM kernels, but vLLM 's Fused Moe was initially contributed b
 
 #### CK
 
-The first version of AMD friendly fused MoE was proposed in [CK#1634](https://github.com/ROCm/composable_kernel/pull/1634) in NOV 26, 2024. Later, MoE Align & Sort was added in [CK#1771](https://github.com/ROCm/composable_kernel/pull/1771) and [CK#1840](https://github.com/ROCm/composable_kernel/pull/1840) in Feb 11, 2025.
+The first version of AMD friendly fused MoE was proposed in [CK#1634](https://github.com/ROCm/composable_kernel/pull/1634) in NOV 26, 2024. Later, MoE Align & Sort was added in [CK#1771](https://github.com/ROCm/composable_kernel/pull/1771) and [CK#1840](https://github.com/ROCm/composable_kernel/pull/1840).
 
 <br />
 
@@ -282,7 +282,7 @@ Writing CK kernels requires writing host side CK solution launcher:
 
 <br />
 
-The AMD CK partitioner and stages pipliner for fused moe is also very interesting, yet out of scope of this article.
+The AMD CK partitioner and stages pipliner for fused moe is also very interesting to be attributed to the final assembly, yet out of scope of this article.
 
 <br />
 
@@ -313,7 +313,7 @@ CK_TILE_DEVICE void moe_align_block_size_kernel(...)
 
 <br />
 
-So MoE Align & Sort in the AMD CK solution alomost aligns with SGLang main implementation execept for codes scheduler of partitioner and pipliner. 
+So MoE Align & Sort in the AMD CK solution alomost aligns with SGLang main implementation execept for partitioner and pipliner. 
 
 <br />
 
@@ -346,15 +346,15 @@ Hence, in philosophy, tiling based fusion code of these two different workloads 
 
 <br />
 
-AITER was introduced at an early time of this year to incorporate LLM kernels used in different projects. It supports Fused MoE via [ck moe](https://github.com/ROCm/aiter/pull/95), triton fused moe and [asm version of MoE via hipModule](https://github.com/ROCm/aiter/blob/52085276ad4710e1a0c9ce2f62ca177a2af35ffa/csrc/py_itfs_cu/asm_fmoe.cpp#L69). 
+AITER was introduced at an early time of this year to incorporate LLM kernels used in different projects. It supports Fused MoE via [ck moe](https://github.com/ROCm/aiter/pull/95), [asm version of MoE via hipModule](https://github.com/ROCm/aiter/blob/52085276ad4710e1a0c9ce2f62ca177a2af35ffa/csrc/py_itfs_cu/asm_fmoe.cpp#L69) and triton fused moe. 
 
 <br />
 
-Hence it is partially open source, since its development schedule is opaque to MI300X developers. 
+Hence it is partially open source, since the opaque assembly and development schedule to MI300X developers. 
 
 <br />
 
-The aleged 3x acceleration [10] of fused MoE in AITER is veried by Bruce Xu [13] and is essentail from that in a group GEMM with different shapes : a gemm where each expert's FFN weights mutliply a block of hidden states of tokens.
+The aleged 3x acceleration [10] of fused MoE in AITER is veried by Bruce Xu [13] and is essentail from the acceleration observed in a group GEMM with different shapes : a gemm where each expert's FFN weights mutliply a block of hidden states of tokens.
 
 The proof is that asm gemm generates almost 3x improvements in [PR#199](https://github.com/ROCm/aiter/pull/199):
 
@@ -369,7 +369,7 @@ The proof is that asm gemm generates almost 3x improvements in [PR#199](https://
 
 <br />
 
-Notablly, there are still cases where triton kernels which adapted from SGLang community are selected. To run triton kernel efficiently on MI300X/MI300A, they map thread blocks onto dies using multi-die architecture specific logics :
+Notablly, there are still cases where triton kernels adapted from SGLang community are selected. To run triton kernel efficiently on MI300X/MI300A, they map thread blocks onto dies using multi-die architecture specific logics :
 
 ```
     # https://github.com/ROCm/triton/blob/f669d3038f4c03ee7a60835e875937c65b5cec35/python/perf-kernels/gemm.py#L115
@@ -419,7 +419,7 @@ Besides, various of AMD chip intrinsics have been used in CK fused MoE, such as
 
 - **_builtin_amdgcn_mov_dpp** 
 
-and so on so forth. These are suspected to be attributed to the final asm version of fused MoE. 
+and so on so forth. These are suspected to be attributed to the final assembly version of fused MoE. 
 
 For example, with usage of **__builtin_nontemporal_load**, we can skip L2 cache and leave more spaces in L2 cacheline for the data predicted to be resued.
 
