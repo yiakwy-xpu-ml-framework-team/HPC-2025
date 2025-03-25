@@ -1,6 +1,6 @@
 > By fully enabling concurrent multiple blocks execution with arbitrary expert numbers (MAX_EXPERT_NUMBER==256), and with aggresive usage of shared memory (5kB LDS) and registers (52 VGPRs, 48 SGPRs), the MoE Align & Sort logics was crafted to achieve 📈3x in A100🎉, 📈3x in H200🎉, 📈10x in MI100🎉, and 📈7x in MI300X/Mi300A🎉: ...
 
-Author : LEI WANG (yiak.wy@gmail.com)
+Author : [LEI WANG](https://github.com/yiakwy-xpu-ml-framework-team) (yiak.wy@gmail.com)
 
 ## Efficient MoE Align & Sort design in SGLang Fused MoE
 
@@ -105,7 +105,7 @@ Now, on chip overhead will be immedately reduced to **20W** cycles from previous
 
 <figure>
 <p align="center">
-<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-3/Efficient%20MoE%20Align%20%26%20Sort%20in%20SGLagn%20Fused%20MoE/assets/img/moe_align_after_opt.png" alt="optimize moe align kernel both in CUDA and ROCm platform" style="background-color:white;width:80%">
+<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-3/Efficient%20MoE%20Align%20%26%20Sort%20in%20SGLagn%20Fused%20MoE/assets/img/moe_align_after_opt.png" alt="optimize moe align kernel" style="background-color:white;width:80%">
 </p>
 <figcaption style="text-align:center">enable efficient multi-blocks moe-align execution in SGLang</figcaption>
 </figure>
@@ -233,7 +233,7 @@ The high level idea is to fuse MoE sorting with Group GEMM. And MoE & Sorting in
 
 <figure>
 <p align="center">
-<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-3/Efficient%20MoE%20Align%20%26%20Sort%20in%20SGLagn%20Fused%20MoE/assets/img/ck-fused-moe-v1.png" alt="Fused MoE V1, NOV 26, 2024" style="background-color:white;width:50%">
+<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-3/Efficient%20MoE%20Align%20%26%20Sort%20in%20SGLagn%20Fused%20MoE/assets/img/ck-fused-moe-v1.png" alt="ck fused moe" style="background-color:white;width:50%">
 </p>
 <figcaption style="text-align:center">CK fused MoE High Level Idea[9]</figcaption>
 </figure>
@@ -364,7 +364,7 @@ The proof is that asm gemm generates almost 3x improvements in [PR#199](https://
 <p align="center">
 <img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-3/Efficient%20MoE%20Align%20%26%20Sort%20in%20SGLagn%20Fused%20MoE/assets/img/asm_flatmm_kernel.png" alt="asm flat matrix multiply" style="background-color:white;width:50%">
 </p>
-<figcaption style="text-align:center">CK fused MoE High Level Idea[9]</figcaption>
+<figcaption style="text-align:center">ASM Flat Matrix Multiply</figcaption>
 </figure>
 
 <br />
@@ -447,7 +447,7 @@ The algorithm employes multiple blocks execution schemes and consists of 3 diffe
 
 <figure>
 <p align="center">
-<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-3/Efficient%20MoE%20Align%20%26%20Sort%20in%20SGLagn%20Fused%20MoE/assets/img/our_moe_align_sort.drawio.png" alt="Fused MoE V1, NOV 26, 2024" style="background-color:white;width:50%">
+<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-3/Efficient%20MoE%20Align%20%26%20Sort%20in%20SGLagn%20Fused%20MoE/assets/img/our_moe_align_sort.drawio.png" alt="moe align sort overview" style="background-color:white;width:50%">
 </p>
 <figcaption style="text-align:center">Our proposed efficent multi-blocks MoE Align & Sort algorithm</figcaption>
 </figure>
@@ -460,7 +460,7 @@ The algorithm employes multiple blocks execution schemes and consists of 3 diffe
 
 <figure>
 <p align="center">
-<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-3/Efficient%20MoE%20Align%20%26%20Sort%20in%20SGLagn%20Fused%20MoE/assets/img/parallel_local_unaligned_cumsum.png" alt="Fused MoE V1, NOV 26, 2024" style="background-color:white;width:50%">
+<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-3/Efficient%20MoE%20Align%20%26%20Sort%20in%20SGLagn%20Fused%20MoE/assets/img/parallel_local_unaligned_cumsum.png" alt="parallel local unalign cumsum" style="background-color:white;width:50%">
 </p>
 <figcaption style="text-align:center">Our proposed parallel local unaligned cumsum</figcaption>
 </figure>
@@ -489,9 +489,9 @@ We choosed **FRAG_SIZE_M(16) x FRAG_SIZE_N(16) x FRAGS_PER_BLOCK(4)** SRAM fragm
 
 <figure>
 <p align="center">
-<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-3/Efficient%20MoE%20Align%20%26%20Sort%20in%20SGLagn%20Fused%20MoE/assets/img/block-wise-reduction.drawio.png" alt="Fused MoE V1, NOV 26, 2024" style="background-color:white;width:50%">
+<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-3/Efficient%20MoE%20Align%20%26%20Sort%20in%20SGLagn%20Fused%20MoE/assets/img/block-wise-reduction.drawio.png" alt="block-wise reduction" style="background-color:white;width:50%">
 </p>
-<figcaption style="text-align:center">Our proposed parallel local unaligned cumsum</figcaption>
+<figcaption style="text-align:center">Block-wise Reduction</figcaption>
 </figure>
 
 <br />
@@ -662,7 +662,7 @@ Detials of this micro arch behavior can be found in AMD CDNA3 ISA and [rocProfil
 
 <figure>
 <p align="center">
-<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-3/Efficient%20MoE%20Align%20%26%20Sort%20in%20SGLagn%20Fused%20MoE/assets/img/vL1D-addresser-stall.png" alt="optimize moe align kernel both in CUDA and ROCm platform" style="background-color:white;width:80%">
+<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-3/Efficient%20MoE%20Align%20%26%20Sort%20in%20SGLagn%20Fused%20MoE/assets/img/vL1D-addresser-stall.png" alt="vL1D 寻址器停顿" style="background-color:white;width:80%">
 </p>
 <figcaption style="text-align:center">ours vL1D addresser stall</figcaption>
 </figure>
