@@ -505,7 +505,6 @@ AITER 中 **fused MoE 的三倍加速** [10] 已由 **Bruce Xu** [13] 验证，�
 
 <br />
 
-```markdown
 在AMD平台上，计算是基于“1 warp 加载 / 1 warp 计算”的方式进行的，而在NVIDIA平台上则是“2 warps 加载和 1 warp 计算”。
 
 <br />
@@ -577,8 +576,6 @@ AITER 中 **fused MoE 的三倍加速** [10] 已由 **Bruce Xu** [13] 验证，�
 > git clone https://github.com/yiakwy-xpu-ml-framework-team/AMD-sglang-benchmark-fork.git -b optimize_moe_align_v3 && cd sgl-kernel && python setup_rocm.py install
 
 可以验证不同输入令牌和专家数量组合的可行性 :
-
-```
 
 > cd ../benchmark/kernels/fused_moe_trition && python benchmark_deepseekv3_moe_align_blocks.py --verify
 
