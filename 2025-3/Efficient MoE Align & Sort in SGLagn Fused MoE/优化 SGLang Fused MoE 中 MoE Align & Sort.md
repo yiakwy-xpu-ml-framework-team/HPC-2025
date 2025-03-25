@@ -31,7 +31,7 @@ MoE（Mixture of Experts）模型 模仿了人脑的低功耗运作模式：功�
 
 <br />
 
-随后，DeepSeek V2/V3/R1 [3][4][5] 通过引入共享专家 [3] 和 门控偏差（gating bias） [4][5] 进一步改进了 MoE，最终实现了无辅助损失（auxiliary loss free）的 MoE 模型 [4][5]。这一优化本质上归因于一个关键事实：当使用共享专家（DeepSeek 团队选择的值为 1）时，可以通过在**较大的专家池（256 个）**上施加偏差分数的惩罚，从而缓解专家路由的不均衡问题 [11]。
+随后，DeepSeek V2/V3/R1 [3][4][5] 通过引入共享专家 [3] 和 门控偏差（gating bias） [4][5] 进一步改进了 MoE，最终实现了无辅助损失（auxiliary loss free）的 MoE 模型 [4][5]。这一优化本质上归因于一个关键事实：当使用共享专家（DeepSeek 团队选择的值为 1）时，可以通过在 **较大的专家池（256 个** 上施加偏差分数的惩罚，从而缓解专家路由的不均衡问题 [11]。
 
 <br />
 
@@ -72,7 +72,7 @@ SGLang 中的 **MoE Align & Sort** 算法采用了 对齐排序，但在 **支�
 
 <br />
 
-- 对齐（alignment）：在 **单个 block** 内执行 传统 基数排序算法 对齐的偏移计算（alignment-based offsets computation）; 
+- 对齐（alignment）：在 **单个 block** 内执行 传统 基数排序算法对齐后的偏移计算（alignment-based offsets computation）; 
 
 - 放置（placement）：根据在多个 block 并行计算出的偏移量，并行放置 tokens;
 
@@ -363,6 +363,8 @@ CK_TILE_DEVICE void moe_align_block_size_kernel(...)
 
 AITER 中 **fused MoE 的三倍加速** [10] 已由 **Bruce Xu** [13] 验证，并且这一加速主要来自于在不同形状的 **Group GEMM** 中观察到的加速：一个 GEMM 操作，其中每个专家的 FFN 权重与一块隐藏状态的 token 进行相乘。
 
+<br />
+
 这一证明可以在 [PR#199](https://github.com/ROCm/aiter/pull/199) 中找到，asm gemm 几乎带来了 **三倍的性能提升**。
 
 <br />
@@ -426,7 +428,9 @@ AITER 中 **fused MoE 的三倍加速** [10] 已由 **Bruce Xu** [13] 验证，�
 
 - **_builtin_amdgcn_mov_dpp** 
 
-等等。这些内建函数可能最终影响 **fused MoE** 的汇编实现。
+等等。这些内建函数可能最终影响 **fused MoE** 的汇编实现和性能。
+
+<br />
 
 例如，使用 **__builtin_nontemporal_load** 可以跳过 L2 缓存，从而为预测将被重复使用的数据留出更多 L2 缓存行空间。
 

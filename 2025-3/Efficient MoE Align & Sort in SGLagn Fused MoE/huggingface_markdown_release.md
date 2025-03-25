@@ -421,6 +421,8 @@ Besides, various of AMD chip intrinsics have been used in CK fused MoE, such as
 
 and so on so forth. These are suspected to be attributed to the final assembly version of fused MoE. 
 
+<br />
+
 For example, with usage of **__builtin_nontemporal_load**, we can skip L2 cache and leave more spaces in L2 cacheline for the data predicted to be resued.
 
 #### Cutlass v3.8
