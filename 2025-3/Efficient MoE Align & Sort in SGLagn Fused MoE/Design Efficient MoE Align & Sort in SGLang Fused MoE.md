@@ -38,7 +38,7 @@ The MoE layer is implemented as multi experts FFN layers, which consists gating 
 
 <br />
 
-The function relies heavily on radix sorting logics underlying. With MoE Align & Sort, ML researchers and practioners can sort tokens in the order of expert ids. 
+The function relies heavily on radix sorting logics underlying. With MoE Align & Sort, ML researchers and practitioners can sort tokens in the order of expert IDs. 
 
 <br />
 
@@ -58,6 +58,8 @@ In some application, such as **TransformerEngine** [6][7], the operation was imp
 
 Despite the fact that **cub::DeviceRadixSort** uses intensively shared memory, which is slighly slower than the implementation based on **__shfl_xor_sync** where only thread local memory is used, it does not allow **alignment sorting**. 
 
+<br />
+
 Alignment sorting is important for Group Gemm efficiency where experts can process tokens in blocks.
 
 <br />
@@ -66,17 +68,17 @@ The MoE Align & Sort algorithm in SGLang employed **alignment sorting**, yet was
 
 <br />
 
-- alignment : to conduct traditional alignment version of offsets computing of radix sorting algorithm in **a single block**;
+- alignment : to conduct traditional alignment based offsets computation for the radix sorting algorithm within **a single block**;
 
-- placement : place tokens according to the offsets computed in **multiple blocks**;
-
-<br />
-
-We propse and write AMD friendly CUDA kernels with our proposed MoE Align & Sort algorithm. So profiling and analysis in AMD platform will be fully considered.
+- placement : to place tokens according to the offsets computed in **multiple blocks**;
 
 <br />
 
-With **RocProfiler-Compute** at different workload, we can clealy see that the first kernel takes **33W** cycles and second kernel takes **8W** cycles even without counting multiple kernels launch overhead in a trace profile :
+We propose and write AMD-friendly CUDA kernels using our proposed MoE Align & Sort algorithm. So profiling and analysis on AMD platform will be fully considered.
+
+<br />
+
+By using **RocProfiler-Compute** for different workloads, we can clealy see that the first kernel takes **33W** cycles and second kernel takes **8W** cycles even without counting multiple kernels launch overhead in a trace profile :
 
 <br />
 
@@ -93,11 +95,11 @@ With **RocProfiler-Compute** at different workload, we can clealy see that the f
 
 <br />
 
-In ROCm SDK 6.3.0, omniperf is rebranded as **rocprof-compute**. Dispite the active support of MI300X/MI300A, it is not by default shipped with ROCm SDK **6.3.0**. But setting up the ROCm compute profiler is nothing more than three easier steps demonstrated in [Tools-dockerhub](https://github.com/yiakwy-xpu-ml-framework-team/Tools-dockerhub).
+In ROCm SDK 6.3.0, omniperf has been rebranded as **rocprof-compute**. Dispite the active support of MI300X/MI300A, it is not by default shipped with ROCm SDK **6.3.0**. But setting up the ROCm compute profiler is nothing more than three simple steps as demonstrated in [Tools-dockerhub](https://github.com/yiakwy-xpu-ml-framework-team/Tools-dockerhub).
 
 <br />
 
-Now, on chip overhead will be immedately reduced to **20W** from **41W** cycles after applying the [optimization we proposed](https://github.com/yiakwy-xpu-ml-framework-team/AMD-sglang-benchmark-fork/blob/790a832385a02d5f52ad627af333ca1c992e24de/sgl-kernel/src/sgl-kernel/csrc/moe_align_kernel.cu#L233)[PR#3613](https://github.com/sgl-project/sglang/pull/3613):
+Now, on chip overhead will be immedately reduced to **20W** cycles from last **41W** cycles after applying the [optimization we proposed](https://github.com/yiakwy-xpu-ml-framework-team/AMD-sglang-benchmark-fork/blob/790a832385a02d5f52ad627af333ca1c992e24de/sgl-kernel/src/sgl-kernel/csrc/moe_align_kernel.cu#L233) in [PR#3613](https://github.com/sgl-project/sglang/pull/3613):
 
 <br />
 
@@ -112,6 +114,8 @@ Now, on chip overhead will be immedately reduced to **20W** from **41W** cycles 
 
 By fully enabling concurrent multiple blocks execution with arbitrary expert numbers (MAX_EXPERT_NUMBER==256), and with aggresive usage of shared memory (5kB LDS) and registers (52 VGPRs, 48 SGPRs), the MoE Align & Sort logics was crafted to achieve [📈3x in A100🎉](#a100_bench), [📈3x in H200🎉](#h200_bench), [📈10x in MI100🎉](#mi100_bench), and [📈7x in MI300X/Mi300A🎉](#mi300_bench):
 
+<br />
+
 |    opt bench (all cases)    |  opt bench (snapshot) | GPU
 :----------------------------:|:---------------------:|:-----:
 ![moe-align-block-size-performance](https://github.com/user-attachments/assets/53b177ba-88ef-4d5a-b833-e112160a2b15) | <img width="200" alt="A100-bench" src="https://github.com/user-attachments/assets/19d0daf3-f2b9-4acc-a2d8-c8be2a9c3049" /> | A100
@@ -119,30 +123,41 @@ By fully enabling concurrent multiple blocks execution with arbitrary expert num
 
 <br />
 
-With **rocprof-compute**, we can easily collect some key indictors for a captured kernel and visualize them in a remote GUI server:
+With **Rocprof-Compute**, we can easily collect some key indictors for a captured kernel and visualize them in a remote GUI server:
 
-![rocprof-compute](assets/img/rocprof-compute.png)
+<br />
 
-To summary, in AMD MI300A, the proposed efficient multi-blocks moe align execution algorithm uses aggressively both vector regsiters (52) per wave with no registers spills (I adjust initial threads block size to its best), and LDS (5kB) per CU with only 6.8% bank conflicts rates.
+<figure>
+<p align="center">
+<img src="assets/img/rocprof-compute.png" alt="start rocprof-compute in server side" style="background-color:white;width:80%">
+</p>
+<figcaption style="text-align:center">Start Rocprof-Compute in server side</figcaption>
+</figure>
+
+<br />
+
+To summary, in AMD MI300X/MI300A, the proposed efficient multi-blocks MoE Align & Sort algorithm uses aggressively both vector regsiters (52) per wave with no registers spills (I adjust the initial threads block size to its best), and LDS (5kB) per CU with only 6.8% bank conflicts rates.
 
 <br />
 
 We also analyzed the roofline model of MoE Sort & Align. The roofline model shows the kernel performance drops in memory bound region. 
 
+<br />
+
 In section [AMD Compute Profile](#amd_compute_profile), we gives details of the profiling data and analysis of our algorithm design and implementation in ROCm platform. 
 
 <br />
 
-Essentially, MI300X/MI300A is the first high performance AI accelerator arch based on multi-dies architecture, and tuning of operations on the chip will be slightly different from those in NVIDIA.
+Essentially, MI300X/MI300A is the world's first high-performance AI accelerator architecture based on a multi-die design. As a result, finetuning of operations on this chip will be slightly different from those on NVIDIA's platform.
 
 <br />
 
-The basic rule is, synchronization among XCDs (accelerated computing dies) is expensive, making full use of XCDs and L2 cache locality affinity to increase the performance. 
+The fundamental rule is, that synchronization among XCDs (Accelerated Computing Dies) is costly, better to make full use of XCDs and L2 cache locality affinity to increase the performance. 
 
 
 <br />
 
-And we should avoid expensive synchronization by either using the lowest speed computing die (XCD7 for MI300X, XCD5 for MI300A) when grid size is smaller than the numbers of XCDs per chip (8 for MI300X, 6 for MI300A), or adapting grid size to multiple of the numbers of XCDs when grid size is bigger than the number.
+And we should avoid expensive synchronization by either using **the lowest speed computing die** (XCD7 for MI300X, XCD5 for MI300A) when grid size is smaller than the number of XCDs per chip (8 for MI300X, 6 for MI300A), or adapting grid size to a multiple of the number of XCDs per chip when it exceeds that threshold.
 
 <br />
 
@@ -150,7 +165,7 @@ Launching cooperative kernels by **hipCooperativeLuanch** may increase L2 cache 
 
 <br />
 
-In this example, the main implementation uses **39** active CUs which is **almost good** since essentially two dies were used.
+In this example, the implementation from previous **main** branch uses **39** active CUs which is **almost good** since essentially two dies were used.
 
 <br />
 
@@ -174,7 +189,7 @@ Before the kernel launch, the MoE Align & Sort algorithm is applied. the MoE Ali
 
 <br />
 
-Multiple launches and inefficient of use LDS, local caches, and registers (VGPR for example) contributed to inefficient single test execution for small workload, compared to single block CUDA counterpart.
+Multiple launches and inefficient use of LDS, local caches, and registers (VGPR for example) contributed to inefficient single test execution for small workloads, compared to single block wise CUDA implementation counterpart.
 
 <br />
 
@@ -197,6 +212,8 @@ Hence fusion is largely (by cost) limited to topk gating softmax, biased topk ga
 #### Megatron
 
 Megatron, before the publication of this article, for FP16/BF16, largely uses **FasterTransformer** approach but added gradient operation of **permute** : **unpermute**, to facilitate [training workload](https://github.com/fanshiqing/grouped_gemm).
+
+<br />
 
 That means MoE is also not efficiently fused.
 
@@ -223,7 +240,7 @@ The high level idea is to fuse MoE sorting with Group GEMM. Adn MoE & Sorting la
 
 <br />
 
-Fusion of **per_group_token_quant** (for online fp8 quantization), **MoE sorting** and **Group GEMM** can be immediately resolved by incorporating Radix Sort computing logics into Group GEMM pipeliner: count occurencies to compute offsets, then do parallel placement.
+Fusion of **per_group_token_quant** (for online fp8 quantization), **MoE sorting** and **Group GEMM** can be immediately resolved by incorporating Radix Sort computing logics into Group GEMM pipeliner: count occurencies to compute offsets followed by parallel placement.
 
 <br />
 
@@ -304,7 +321,7 @@ Note the implementation does not always promises the best performance in AMD pla
 
 <br />
 
-Since AMD CDNA3 arch does not support **Graphcore** alike on-chip shuffling (we abstracted and generalized it as **Remapping** in 2023) magics, -- which was now supported in NVIDIA H100/H200/B200 throughout high efficient on chip **SM-SM** communication.
+Since AMD CDNA3 arch does not support **Graphcore** alike on-chip shuffling (we abstracted and generalized it as **Remapping** Op of PopART[12] & PopRT in 2023) magics, -- which was now supported in NVIDIA H100/H200/B200 throughout high efficient on chip **SM<->SM** communication.
 
 <br />
 
@@ -312,7 +329,7 @@ As a result, adapting the data layout cheaply among blocks to its best will be a
 
 <br />
 
-Hence, in philosophy, tiling based fusion code of these two different workloads may not alwasy exceed the non-fused version. Details of the research will be conducted in our V4 release.
+Hence, in philosophy, tiling based fusion code of these two different workloads may not always exceed the non-fused version. Details of the research will be conducted in our V4 release.
 
 <br />
 
@@ -329,12 +346,30 @@ Hence, in philosophy, tiling based fusion code of these two different workloads 
 
 <br />
 
-AITER was introduced at an early time of this year to incorporate LLM kernels used in different projects. It supports Fused MoE via triton.
+AITER was introduced at an early time of this year to incorporate LLM kernels used in different projects. It supports Fused MoE via [ck moe](https://github.com/ROCm/aiter/pull/95), triton fused moe and [asm version of MoE via hipModule](https://github.com/ROCm/aiter/blob/52085276ad4710e1a0c9ce2f62ca177a2af35ffa/csrc/py_itfs_cu/asm_fmoe.cpp#L69). 
 
 <br />
 
-The fused MoE in AITER is essentail a group GEMM : each expert's FFN weights mutliply a block of hidden states of tokens. Notablly, to run triton efficiently on MI300X, they map thread blocks onto dies using a specific logis :
+Hence it is partially open source, yet not open since its development schedule is opaque to developers who hold MI300X. 
 
+<br />
+
+The aleged 3x acceleration of fused MoE in AITER is essentail from that in a group GEMM with different shapes : a gemm where each expert's FFN weights mutliply a block of hidden states of tokens. 
+
+The asm gemm generates almost 3x improvements in [PR#199](https://github.com/ROCm/aiter/pull/199):
+
+<br />
+
+<figure>
+<p align="center">
+<img src="assets/img/asm_flatmm_kernel.png" alt="asm flat matrix multiply" style="background-color:white;width:50%">
+</p>
+<figcaption style="text-align:center">CK fused MoE High Level Idea[9]</figcaption>
+</figure>
+
+<br />
+
+Notablly, there are still cases where triton kernels which adapted from SGLang community are selected. To run triton kernel efficiently on MI300X/MI300A, they map thread blocks onto dies using multi-die architecture specific logics :
 
 ```
     # https://github.com/ROCm/triton/blob/f669d3038f4c03ee7a60835e875937c65b5cec35/python/perf-kernels/gemm.py#L115
@@ -374,7 +409,11 @@ The fused MoE in AITER is essentail a group GEMM : each expert's FFN weights mut
     ...
 ```
 
-In DeepSeekR1-Part2[10], the article claimed 3x improvement was achieved based for the kernel in AITER.
+Besides, various of AMD chip intrinsics have been used, such as **__builtin_nontemporal_load**, **__builtin_amdgcn_ds_swizzle**, **__builtin_amdgcn_ds_permute**/**__builtin_amdgcn_ds_bpermute**, **_builtin_amdgcn_mov_dpp** and so on so forth was added into the repo for AMD specific optimization.
+
+For example, with usage of **__builtin_nontemporal_load**, we can skip L2 cache and leave more spaces in L2 cacheline for the data predicted to be resued.
+
+To summary, in DeepSeekR1-Part2[10], the article claimed 3x improvement was achieved based for the kernel in AITER.
 
 #### Cutlass v3.8
 
@@ -587,7 +626,7 @@ Vector L1 cache (vL1D) is unit local to each CU, the hit rate records cache line
 
 <br />
 
-At the time data requested from CU to vL1D's addressing processing unit (texture addresser), there are for states for unit to decide whether to accept or roll back the data request to CU via data processor unit in vL1D.
+At the time data requested from CU to vL1D's addressing processing unit (texture addresser), there are four states for the complex to decide whether to accept or roll back the data request to CU via the data processor unit in vL1D.
 
 <br />
 
@@ -622,25 +661,37 @@ The load balance of data R/W is greatly reduced from **8 kB** Reading Op, **27 B
 
 ##### Profiling Results of L2 Cache
 
-In CDNA3, L2 Cache is shared by all CUs and is the main entry to share data among thread blocks distruted to different CUs. 
+In CDNA3 architecture, L2 Cache is shared by all CUs and is the main entry to share data among thread blocks distruted to different CUs. 
 
 <br />
 
-With multiple channels and address interleaving design, requests to L2 cache can be largely handled concurrently.
+With multiple channels and addresses interleaving design, requests to L2 cache can be largely handled concurrently.
 
 <br />
+
+Morover with AMD specific intrincs such as **__builtin_nontemporal_load**, we can pass through L2 cache for data we don't need to visit again. Details will be revealed in V4 release.
+
+<br />
+
+The details of L2 cache study will be revealed in V4 release.
 
 ## Conclusion
 
-The new algorithm accelerate MoE Align & Sort in both CUDA and ROCm platform significantly up to 3x ~ 7x by maximize the usage of LDS and vector registers. We also observed memory bounded op may perform worse in a multiple die chip compared to a single die chip, this indicates a new finetuning direction when programming a multiple-die arch chip such as MI300X/MI300A and B200/B300.
+The new algorithm accelerates MoE Align & Sort in both CUDA and ROCm platform significantly up to 3x ~ 7x by maximizing the usage of LDS and vector registers. 
 
 <br />
 
-However details of the algorithm can be still polished to improve cache hit rate and main memory coalecsing rate.
+We also observed memory bounded op may perform worse in a multiple die chip compared to a single die chip, this indicates a new finetuning direction when programming device codes in a multiple-die chip such as MI300X/MI300A and B200/B300.
+
+<br />
+
+However, details of the algorithm can be still polished to improve cache hit rate and main memory coalecsing rate. 
 
 ## Acknowledgement
 
-Special thanks to Prof Zhang Han (hanzhangqin8@gmail.com), Doctor Wang YunHong (yunhongwang2000@gmail.com) from NUS team for the collabration in MI100/MI250 performance verification, Zev Rekhter (Connect@reishi.ai) for the collabration in MI300X performance verification and Shuyi Fan for the collabration in H200 verification.
+Special thanks to Prof Zhang Han (hanzhangqin8@gmail.com), Doctor Wang YunHong (yunhongwang2000@gmail.com) from NUS team for the collabration in MI100/MI250 performance verification, Zev Rekhter (Connect@reishi.ai) for the collabration in MI300X performance verification, [Shuyi Fan](fsygd1996@163.com) for the collabration in H200 verification and [BBuf](1182563586@qq.com) for discussion and review of the solution in the SGLang.
+
+Note this is also an indepent work from SGLang community. I Also express my deep thanks to Bingqing, Peng Sun and ShawHai who spare time in reviewing the article and suggestion in revision. 
 
 ## Reference
 
@@ -659,3 +710,5 @@ model. CoRR, abs/2405.04434, 2024c. URL https://doi.org/10.48550/arXiv.2405.0443
 9. CK Fused MoE V1 : https://github.com/ROCm/composable_kernel/pull/1634
 10. AMD 3X MOE : https://rocm.blogs.amd.com/artificial-intelligence/DeepSeekR1-Part2/README.html
 11. Lean Wang and Huazuo Gao and Chenggang Zhao and Xu Sun and Damai Dai Auxiliary-Loss-Free Load Balancing Strategy for Mixture-of-Experts, 2024. URL https://arxiv.org/abs/2408.15664.
+12. PopART on chip TensorRemap : https://github.com/graphcore/popart/tree/sdk-release-3.4
+13. DeepSeek V3 Optimizatoin based on AITER backend : https://github.com/sgl-project/sglang/pull/4344
