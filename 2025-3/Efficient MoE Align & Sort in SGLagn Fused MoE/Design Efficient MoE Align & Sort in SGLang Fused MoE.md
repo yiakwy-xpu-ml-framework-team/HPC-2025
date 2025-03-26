@@ -48,9 +48,9 @@ In some application, such as **TransformerEngine** [6][7], the operation was imp
 
 <figure>
 <p align="center">
-<img src="assets/img/nv_moe_permute_op.png" alt="moe-permute-illustration" style="background-color:white;width:50%">
+<img src="assets/img/nv_moe_permute_op.png" alt="moe permute illustration" style="background-color:white;width:50%">
 </p>
-<figcaption style="text-align:center">moe-permute-illustration</figcaption>
+<figcaption style="text-align:center">MoE permute illustration</figcaption>
 </figure>
 
 <br />

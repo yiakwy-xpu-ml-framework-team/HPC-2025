@@ -49,7 +49,7 @@ MoE 层 本质上是由多个专家前馈网络（FFN） 组成的层，其中�
 
 <figure>
 <p align="center">
-<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-3/Efficient%20MoE%20Align%20%26%20Sort%20in%20SGLagn%20Fused%20MoE/assets/img/nv_moe_permute_op.png" alt="moe-permute-illustration" style="background-color:white;width:50%">
+<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-3/Efficient%20MoE%20Align%20%26%20Sort%20in%20SGLagn%20Fused%20MoE/assets/img/nv_moe_permute_op.png" alt="moe permute illustration" style="background-color:white;width:50%">
 </p>
 <figcaption style="text-align:center">MoE Permute 示例</figcaption>
 </figure>
