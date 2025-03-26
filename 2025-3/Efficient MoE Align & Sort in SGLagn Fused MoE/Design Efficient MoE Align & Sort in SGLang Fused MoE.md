@@ -709,7 +709,7 @@ However, details of the algorithm can be still polished to improve cache hit rat
 
 Special thanks to Prof Zhang Han (hanzhangqin8@gmail.com), Doctor Wang YunHong (yunhongwang2000@gmail.com) from NUS team for the collabration in MI100/MI250 performance verification, Zev Rekhter (Connect@reishi.ai) for the collabration in MI300X performance verification, Shuyi Fan (fsygd1996@163.com) for the collabration in H200 verification and [BBuf](https://github.com/BBuf)(1182563586@qq.com) for discussion and review of the solution in the SGLang.
 
-Note this is an indepent work from SGLang community. 
+Note this is an independent work from SGLang community. 
 
 I also express my deep thanks to Bingqing, Peng Sun and ShawHai who spare time individually in reviewing the article and giving suggestions in revision. 
 

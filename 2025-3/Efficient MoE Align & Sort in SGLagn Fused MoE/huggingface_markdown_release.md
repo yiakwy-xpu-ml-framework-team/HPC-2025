@@ -711,7 +711,7 @@ Special thanks to Prof Zhang Han (hanzhangqin8@gmail.com), Doctor Wang YunHong (
 
 <br />
 
-Note this is an indepent work from SGLang community. 
+Note this is an independent work from SGLang community. 
 
 <br />
 
