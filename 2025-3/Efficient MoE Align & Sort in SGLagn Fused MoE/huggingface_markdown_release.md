@@ -161,7 +161,7 @@ And we should avoid expensive synchronization by either using **the lowest speed
 
 <br />
 
-Launching cooperative kernels by **hipCooperativeLuanch** may increase L2 cache pressure (relate to texture addresser stall rate and busy rate) when data exchange (espeically Die-Die Exchange) increases among blocks.
+Launching cooperative kernels by **hipCooperativeLaunch** may increase L2 cache pressure (relate to texture addresser stall rate and busy rate) when data exchange (espeically Die-Die Exchange) increases among blocks.
 
 <br />
 
@@ -189,7 +189,7 @@ Before the kernel launch, the MoE Align & Sort algorithm is applied. the MoE Ali
 
 <br />
 
-Multiple launches and inefficient use of LDS, local caches, and registers (VGPR for example) contributed to inefficient single test execution for small workloads, compared to single block wise CUDA implementation counterpart.
+Multiple launches and inefficient use of LDS, local caches, and registers (VGPR for example) contributed to inefficient single test execution for small workloads, compared to single block CUDA implementation counterpart.
 
 <br />
 
@@ -219,7 +219,7 @@ That means MoE is also not efficiently fused.
 
 #### vLLM
 
-SGLang uses many vLLM kernels, but vLLM 's Fused Moe was initially contributed by SGLang team. Hencey they deploy the same approach.
+SGLang uses many vLLM kernels, but vLLM 's Fused Moe was initially contributed by SGLang team. Hence they deploy the same approach.
 
 #### CK
 
@@ -354,7 +354,7 @@ Hence it is partially open source, since the opaque assembly and development sch
 
 <br />
 
-The aleged 3x acceleration [10] of fused MoE in AITER is veried by Bruce Xu [13] and is essentail from the acceleration observed in a group GEMM with different shapes : a gemm where each expert's FFN weights mutliply a block of hidden states of tokens.
+The aleged 3x acceleration [10] of fused MoE in AITER is verified by Bruce Xu [13] and is essentail from the acceleration observed in a group GEMM with different shapes : a gemm where each expert's FFN weights mutliply a block of hidden states of tokens.
 
 The proof is that asm gemm generates almost 3x improvements in [PR#199](https://github.com/ROCm/aiter/pull/199):
 
@@ -473,11 +473,11 @@ The algorithm was first proposed and implemented by us in [PR#2970](https://gith
 
 <br />
 
-We load balanced the cumsum execution in each block to **kElementsPerThr(16)** threads, where each thread , where **kElementsPerThr + kElementsPerThr + threadIdx.x** Add Operations needed to be processed. 
+We load balanced the cumsum execution in each block to **kElementsPerThr(16)** threads, where **kElementsPerThr + kElementsPerThr + threadIdx.x** Add Operations needed to be processed in each thread. 
 
 <br />
 
-Hence wavefront is faster to reach compared to the single thread version in curren repo and we hereby observed **30%** improvement in this version of implementation.
+Hence wavefront is faster to reach compared to the single thread version in current repo and we hereby observed **30%** improvement in this version of implementation.
 
 #### Reduce unaligned cumsum
 
@@ -502,7 +502,7 @@ In AMD platform, calculation is performend on a 1 warp to load / 1 warp to compu
 
 <br />
 
-The design makes use of full advantages of AMD 64 SIMD lanes in CDNA3 architecture. And the number blocks is always multiple of the number of XCDs in this multi-die arch chip.
+The design makes use of full advantages of AMD 64 SIMD lanes in CDNA3 architecture. And the number of blocks is always multiple of the number of XCDs in this multi-die arch chip.
 
 <br />
 
@@ -709,7 +709,11 @@ However, details of the algorithm can be still polished to improve cache hit rat
 
 Special thanks to Prof Zhang Han (hanzhangqin8@gmail.com), Doctor Wang YunHong (yunhongwang2000@gmail.com) from NUS team for the collabration in MI100/MI250 performance verification, Zev Rekhter (Connect@reishi.ai) for the collabration in MI300X performance verification, Shuyi Fan (fsygd1996@163.com) for the collabration in H200 verification and [BBuf](https://github.com/BBuf)(1182563586@qq.com) for discussion and review of the solution in the SGLang.
 
+<br />
+
 Note this is an indepent work from SGLang community. 
+
+<br />
 
 I also express my deep thanks to Bingqing, Peng Sun and ShawHai who spare time individually in reviewing the article and giving suggestions in revision. 
 
