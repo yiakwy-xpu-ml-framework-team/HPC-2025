@@ -711,7 +711,7 @@ Special thanks to Prof Zhang Han (hanzhangqin8@gmail.com), Doctor Wang YunHong (
 
 Note this is an indepent work from SGLang community. 
 
-I Also express my deep thanks to Bingqing, Peng Sun and ShawHai who spare time individually in reviewing the article and giving suggestions in revision. 
+I also express my deep thanks to Bingqing, Peng Sun and ShawHai who spare time individually in reviewing the article and giving suggestions in revision. 
 
 ## Reference
 
