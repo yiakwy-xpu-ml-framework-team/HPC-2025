@@ -610,7 +610,7 @@ Feasibility across different combination of numbers input token and experts can 
 
 #### Benchmark on MI300X
 
-| num_tokens  | experts | SGLang     | Triton (NV) | GPU  
+| num_tokens  | experts | SGLang     | Triton (AMD) | GPU  
 :------------:|:-------:|:----------:|:-----------:|------
 8192          | 256     |   88.16    | 281.64      | MI300X
 16384         | 256     |   134.02   | 448.88      | MI300X
@@ -687,7 +687,7 @@ With multiple channels and addresses interleaving design, requests to L2 cache c
 
 <br />
 
-Morover with AMD specific intrincs such as **__builtin_nontemporal_load**, we can pass through L2 cache for data we don't need to visit again. Details will be revealed in V4 release.
+Morover with AMD specific intrincs such as **__builtin_nontemporal_load**, we can pass through L2 cache for data we don't need to visit again.
 
 <br />
 

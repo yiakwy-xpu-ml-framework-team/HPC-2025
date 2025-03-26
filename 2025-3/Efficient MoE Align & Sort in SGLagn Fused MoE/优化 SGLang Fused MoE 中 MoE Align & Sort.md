@@ -621,7 +621,7 @@ AITER 中 **fused MoE 的三倍加速** [10] 已由 **Bruce Xu** [13] 验证，�
 
 #### MI300X 性能测试
 
-| num_tokens  | experts | SGLang     | Triton (NV) | GPU  
+| num_tokens  | experts | SGLang     | Triton (AMD) | GPU  
 :------------:|:-------:|:----------:|:-----------:|------
 8192          | 256     |   88.16    | 281.64      | MI300X
 16384         | 256     |   134.02   | 448.88      | MI300X
@@ -692,11 +692,11 @@ AITER 中 **fused MoE 的三倍加速** [10] 已由 **Bruce Xu** [13] 验证，�
 
 <br />
 
-此外，使用 AMD 特有的内置函数如 **__builtin_nontemporal_load**，我们可以绕过 L2 缓存来处理那些不需要再次访问的数据。更多细节将在 V4 版本中揭示。
+此外，使用 AMD 特有的内置函数如 **__builtin_nontemporal_load**，我们可以绕过 L2 缓存来处理那些不需要再次访问的数据。
 
 <br />
 
-L2 缓存研究的具体细节将在 V4 版本中披露。
+更多 L2 缓存研究细节将在 V4 版本中揭示。
 
 ## 结论
 
@@ -714,7 +714,11 @@ L2 缓存研究的具体细节将在 V4 版本中披露。
 
 特别感谢来自 NUS 团队的秦章含教授 (hanzhangqin8@gmail.com)，王昀鸿博士 (yunhongwang2000@gmail.com) 在 MI100/MI250 性能验证中的合作，Zev Rekhter (Connect@reishi.ai) 在 MI300X 性能验证中的合作，范舒宜 (fsygd1996@163.com) 在 H200 验证中的合作，以及 [BBuf](https://github.com/BBuf)(1182563586@qq.com) 在 SGLang 解决方案的讨论和审阅。
 
+<br />
+
 请注意，这是 SGLang 社区的独立工作。
+
+<br />
 
 我还要深深感谢 Bingqing、Peng Sun 和 ShawHai，他们抽空审阅文章并提供修改建议时给予的帮助。
 
