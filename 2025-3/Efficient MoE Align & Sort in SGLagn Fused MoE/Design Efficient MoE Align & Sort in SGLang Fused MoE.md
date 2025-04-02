@@ -735,4 +735,4 @@ model. CoRR, abs/2405.04434, 2024c. URL https://doi.org/10.48550/arXiv.2405.0443
 
 ## Sponsor Sources
 
-Also see [reishi.ai](https://reishi.ai/blog/Moe-align-and-sort) and [huggingface](https://huggingface.co/blog/yiakwy-xpu-team/efficient-moe-align-sort-design-for-sglang)
+Also see [evergrid.ai](https://evergrid.ai/blog/Moe-align-and-sort) and [huggingface](https://huggingface.co/blog/yiakwy-xpu-team/efficient-moe-align-sort-design-for-sglang)

@@ -740,4 +740,4 @@ AITER 中 **fused MoE 的三倍加速** [10] 已由 **Bruce Xu** [13] 验证，�
 
 ## 赞助者渠道
 
-请前往 [reishi.ai](https://reishi.ai/blog/Moe-align-and-sort) 和 [huggingface](https://huggingface.co/blog/yiakwy-xpu-team/efficient-moe-align-sort-design-for-sglang)
+请前往 [evergrid.ai](https://evergrid.ai/blog/Moe-align-and-sort) 和 [huggingface](https://huggingface.co/blog/yiakwy-xpu-team/efficient-moe-align-sort-design-for-sglang)
