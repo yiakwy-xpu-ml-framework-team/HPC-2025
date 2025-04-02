@@ -449,7 +449,7 @@ AITER 中 **fused MoE 的三倍加速** [10] 已由 **Bruce Xu** [13] 验证，�
 - 分布式并发计数
 - 计算累积和（cumsum）
   - 并行非对齐本地累积和
-  - 减少非对齐累积和
+  - 归约非对齐累积和
   - 对齐全局累积和
   - 存储全局累积和
 - 并行放置
@@ -489,7 +489,7 @@ AITER 中 **fused MoE 的三倍加速** [10] 已由 **Bruce Xu** [13] 验证，�
 
 因此，与当前仓库中的单线程版本相比，波前（wavefront）更快地到达，我们观察到此版本实现的性能提升了 **30%**。
 
-#### 减少非对齐累积和（Reduce Unaligned Cumsum）
+#### 归约非对齐累积和（Reduce Unaligned Cumsum）
 
 一旦我们获得了每个块中的本地非对齐累积和，就可以在预分配的 HBM 缓冲区中进行块级别的累积和归约。
 
@@ -503,7 +503,7 @@ AITER 中 **fused MoE 的三倍加速** [10] 已由 **Bruce Xu** [13] 验证，�
 <p align="center">
 <img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-3/Efficient%20MoE%20Align%20%26%20Sort%20in%20SGLagn%20Fused%20MoE/assets/img/block-wise-reduction.drawio.png" alt="block-wise reduction" style="background-color:white;width:50%">
 </p>
-<figcaption style="text-align:center">块级规约
+<figcaption style="text-align:center">块级归约
 </figcaption>
 </figure>
 
@@ -712,7 +712,7 @@ AITER 中 **fused MoE 的三倍加速** [10] 已由 **Bruce Xu** [13] 验证，�
 
 ## 致谢
 
-特别感谢来自 NUS 团队的秦章含教授 (hanzhangqin8@gmail.com)，王昀鸿博士 (yunhongwang2000@gmail.com) 在 MI100/MI250 性能验证中的合作，Zev Rekhter (Connect@reishi.ai) 在 MI300X 性能验证中的合作，范舒宜 (fsygd1996@163.com) 在 H200 验证中的合作，以及 [BBuf](https://github.com/BBuf)(1182563586@qq.com) 在 SGLang 解决方案的讨论和审阅。
+特别感谢来自 NUS 团队的覃含章教授 (hanzhangqin8@gmail.com)，王昀鸿博士 (yunhongwang2000@gmail.com) 在 MI100/MI250 性能验证中的合作，Zev Rekhter (Connect@reishi.ai) 在 MI300X 性能验证中的合作，范舒宜 (fsygd1996@163.com) 在 H200 验证中的合作，以及 [BBuf](https://github.com/BBuf)(1182563586@qq.com) 在 SGLang 解决方案的讨论和审阅。
 
 <br />
 
