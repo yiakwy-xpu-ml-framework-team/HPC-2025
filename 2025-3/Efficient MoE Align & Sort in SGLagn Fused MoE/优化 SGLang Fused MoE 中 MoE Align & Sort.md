@@ -712,7 +712,7 @@ AITER 中 **fused MoE 的三倍加速** [10] 已由 **Bruce Xu** [13] 验证，�
 
 ## 致谢
 
-特别感谢来自 NUS 团队的覃含章教授 (hanzhangqin8@gmail.com)，王昀鸿博士 (yunhongwang2000@gmail.com) 在 MI100/MI250 性能验证中的合作，Zev Rekhter (Connect@reishi.ai) 在 MI300X 性能验证中的合作，范舒宜 (fsygd1996@163.com) 在 H200 验证中的合作，以及 [BBuf](https://github.com/BBuf)(1182563586@qq.com) 在 SGLang 解决方案的讨论和审阅。
+特别感谢来自 NUS 团队的覃含章教授 (hanzhangqin8@gmail.com)，王昀鸿博士 (yunhongwang2000@gmail.com) 在 MI100/MI250 性能验证中的合作，Zev Rekhter (connect@evergrid.ai) 在 MI300X 性能验证中的合作，范舒宜 (fsygd1996@163.com) 在 H200 验证中的合作，以及 [BBuf](https://github.com/BBuf)(1182563586@qq.com) 在 SGLang 解决方案的讨论和审阅。
 
 <br />
 
