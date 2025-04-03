@@ -219,7 +219,7 @@ That means MoE is also not efficiently fused.
 
 #### vLLM
 
-SGLang uses many vLLM kernels, but vLLM 's Fused Moe was initially contributed by SGLang team. Hence they deploy the same approach.
+SGLang uses many vLLM kernels, but vLLM 's Fused Moe was initially contributed by by AnyScale team, then refined by SGLang committers. Hence they deploy the same approach.
 
 #### CK
 
