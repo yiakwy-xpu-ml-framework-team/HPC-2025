@@ -175,7 +175,7 @@ Our implementation uses 66 active CUs in multi-blocks excution that acrossing tw
 
 Details will be further discussed in profiling section.
 
-## Review of Fused MoE in SGLang
+## Review of MoE Align & Sort in SGLang
 
 SGLang team used triton first approach to implement the logics and gained great successes in day 0 support of DeepSeek V3 in Dec 2024.
 

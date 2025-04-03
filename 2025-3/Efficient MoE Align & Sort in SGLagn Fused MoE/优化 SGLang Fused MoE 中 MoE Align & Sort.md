@@ -182,7 +182,7 @@ SGLang 中的 **MoE Align & Sort** 算法采用了 对齐排序，但在 **支�
 
 具体细节将在 **性能分析（profiling）** 部分进一步讨论。
 
-## SGLang 中 Fused MoE 的回顾
+## SGLang 中 MoE & Sort 的回顾
 
 SGLang 团队采用 **Triton First** 方法实现了相关逻辑，并在 2024 年 12 月成功实现 **DeepSeek V3** 的 **Day-0 支持**。  
 
