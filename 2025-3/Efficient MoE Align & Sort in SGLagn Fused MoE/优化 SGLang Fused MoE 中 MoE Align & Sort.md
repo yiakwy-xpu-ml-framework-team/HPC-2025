@@ -226,7 +226,7 @@ SGLang 的 [MoE](https://github.com/sgl-project/sglang/blob/8baf9a0c18c6bc700e89
 
 #### vLLM
 
-**SGLang** 使用了许多 **vLLM** 设备代码，但 **vLLM** 的 Fused MoE 最初是由 **AnyScale** 团队贡献，SGLang 贡献者参与修改。因此，它们采用了相同的方法进行部署。
+**SGLang** 使用了许多 **vLLM** 设备代码，但 **vLLM** 的 Fused MoE 最初是由 **DeepSeek** 团队[贡献](https://github.com/vllm-project/vllm/pull/2453)，AnyScale 和 SGLang 贡献者参与修改。因此，它们采用了相同的方法进行部署。
 
 #### CK
 
