@@ -7,74 +7,78 @@ caption {
 }
 </style>
 
-> We validated maximum prefill and decode disaggregated throughput for 13 x H800 DGX SuperPod at the speed of around 1.3 million toks/sec input throughput and 20 k toks/sec output throughput over various of disaggregation settings such as P4D9, P4D6. P2D4, P2D2 in server online test (benchmark with SGLang **bench_one_batch_server.py** [^1] to meausre URL API calling in server side), followed by user side online test under service level objectives (SLO) (benchmark with evalscope [^2] to measure OpenAI compatible URL API with API Key in an endpoint) at the speed of output throughput of 25k toks/sec at concurrencies of 50, 55k toks/sec at concurrencies of 150 for small queries. Given 1k, 2k, 4k input, when **batch size * input length** exceeds certainer number, TTFT grow suddenly and steeply, overall latency dominated by TTFT since transferring of KV cache takes major time. Balance between gpu utilization and goodput rate can be achieved if input sequnce length (few hundred MB * batch size / KV cache transfer speed) is bounded and much larger than output length, preferable 4:1 in H800 DGX SuperPod. High TTFT leads to unreliable output throughput and low goodput rate in server side online test.
+> We evaluated the maximum prefill and decode goodput (throughput under SLO, i.e., TTFT < 2s, ITL < 50ms) [^6] in a disaggregated LLM inference architecture using 13 H800 DGX SuperPod nodes. The system achieved approximately 1.3 million tokens per second (toks/sec) for input throughput and 20,000 toks/sec for output throughput across various server-side disaggregation configurations (P4D9, P4D6, P2D4, P4D2, P2D2). Server-side performance was measured using the SGLang bench_one_batch_server.py benchmark [^1], which evaluates URL API call performance.
+On the user side, we conducted online observations under service level objectives (SLOs), using evalscope [^2] to benchmark OpenAI-compatible endpoint APIs with API key authentication. Under these conditions, the system sustained 25,000 toks/sec output throughput at a concurrency of 50, and 55,000 toks/sec at a concurrency of 150 for small input queries. We observed that when the product of `batch size × input length` exceeds a certain threshold (e.g., due to KV cache transfer limitations), Time to First Token (TTFT) increases sharply. As a result, overall latency becomes dominated by TTFT. To maintain high GPU utilization and goodput, the input sequence length should be significantly longer than the output—ideally maintaining an input-to-output ratio of 4:1 or 5:1. This balance is particularly effective on H800 DGX SuperPod systems. Excessively high TTFT leads to unstable output throughput and a significant decline in server-side goodput.
+
 
 Authors : [LEI WANG](https://github.com/yiakwy-xpu-ml-framework-team) (yiak.wy@gmail.com, Researcher and PhD candidate in HKUST), Andy Guo, Yi Chao, Yujie Pu, Yiwen Wang, Xue Wei
 
 ## Motivation & Background
 
-In Prefill-Decode aggregated LLM inference architecture, an interlevating schedule plan between prefill tokens and decodes tokens were implemented in vLLM bofore [2024 Q2](https://github.com/vllm-project/vllm/issues/3861), then improved with or continous scheduling [^3] for overall GPU utimizaton. However due to distinct computing natures of prefill and decode stages, continous batching of incoming requests of full un-chunked prefill tokens with decode tokens of running requests increase significantly decode latency, hence large ITL are expected. Chunk-prefill feature [^4] in [PR#3130](https://github.com/vllm-project/vllm/issues/3130) has been implemented so that chunked prefill tokens of incomping requests and decode tokens of runing requests are batched together in a colocated system as demonstrated below for better ITL and GPU utilization:
+In Prefill-Decode aggregated LLM inference architecture, an interleveating schedule plan between prefill tokens and decodes tokens was implemented in vLLM bofore [2024 Q2](https://github.com/vllm-project/vllm/issues/3861), and later improved with continuous scheduling [^3] higher overall GPU utimizaton. However due to distinct computing natures of prefill and decode stages, continous batching of full un-chunked prefill tokens of incoming requests with decode tokens of running requests increase significantly decode latency. This leads to large inter token latency (ITL) and degrades responsiveness. To address this issue, chunk-prefill feature [^4] introduced in [PR#3130](https://github.com/vllm-project/vllm/issues/3130) was proposed that chunked prefill tokens of incoming requests and decode tokens of runing requests are batched together in a colocated system as demonstrated below for better ITL and GPU utilization:
 
 <br />
 
 <figure>
 <p align="center">
-<img src="assets/img/prefill-decode-schedule.drawio.png" alt="chunked-prefill schedule in aggregated serving architecture" style="width:50%">
+<img src="assets/img/prefill-decode-schedule.drawio.png" alt="chunked-prefill schedule in aggregated serving architecture" style="width:120%">
 </p>
 <figcaption style="text-align:center">chunked-prefill schedule in aggregated serving architecture</figcaption>
 </figure>
 
 <br />
 
-However chunk-prefill does take into account distinct computing natures of prefilling and decodeing. The process of decoding is often captured by a cuda graph for multiple rounds of generation, hence addtional overhead brought in when decoding is batched with chunked prefill and cuda graph is not viable. It is very likely to happen.
+However chunked-prefill does not take into account distinct computing natures of prefilling and decodeing. The process of decoding is often captured by a cuda graph for multiple rounds of generation, hence addtional overhead brought in when decoding process is batched with chunked prefill process and cuda graph is not viable. It is very likely to happen.
 
 <br />
 
-Moreover, as obsered by DistServe [^4] [^5] [^6] on 13 B dense model and our experiments on 671 B MoE model, cost of prefill increase significantly once `batch_size * output_length` exceeds a certain threashould (i.e. 128 * 128) for a colocated serving system, no matter what chunk-fill size set.
+Moreover, as observed in DistServe [^4] [^5] [^6] on `13 B` dense model and our experiments on `671 B` MoE model, prefill computation cost increases significantly once `batch_size x output_length` exceeds a certain threshold (i.e. `128 x 128`) in a colocated serving system, regardless of chunk-fill size.
 
 <br />
 
-We conducted both aggregated and disaggregated serving expriments at scales with our own finetuned DeepSeek V3 (0324) alike model in SGLang v0.4.8.
+We conducted both aggregated and disaggregated serving experiments at scales with our own finetuned DeepSeek V3 (0324) alike model in SGLang v0.4.8.
 
 <br />
 
-Given an input length (in_seq_len : 128 ~ 4096) and short output length (out_seq_len : 1~256), tuning over different batch sizes (bs), we concluded that maximum of prefill goodput in seving DeepSeek V3 alike massive MoE model, arrives at specific `batch size (bs) x output length (out_seq_len)` in an aggregated LLM inference architecture, and arrives at specific `batch size (bs) * input length (in_seq_len)` in a disaggregated LLM inference architecture.
+Given an input sequence length (in_seq_len : 128 ~ 4096) and short output sequence length (out_seq_len : 1~256), tuning over various batch sizes (bs), and concluded that maximum of prefill goodput, when seving DeepSeek V3 alike massive MoE model, arrives at specific `batch size (bs) x output length (out_seq_len)` in an aggregated LLM inference architecture, and at specific `batch size (bs) * input length (in_seq_len)` in a disaggregated LLM inference architecture.
 
 <br />
 
-Unlike serving 13 `B` dense model in DistServe [^4] [^5] [^6] , prefill goodput in serving 671 `B` large MoE (8 out of 256 experts, plus `$P * 8` redundant experts), is negatively affected by the output length and batch sizes once its max is achieved. The details of statistics can be found in Appendix.
+Unlike serving `13 B` dense model in DistServe [^4] [^5] [^6] , prefill goodput in serving `671 B` large MoE (8 out of 256 experts, plus `P * 8` redundant experts), is negatively affected by the output length and batch sizes once its max is achieved. The details of statistics can be found in Appendix.
 
-#### Review of Prefill decode nodes Colocated H800 X 2 test
+<br />
 
-In a H800 x 2 (DGX SuperPod) test config, each node is connected via infiniband, the max of input Tput arrives at 20 k toks/sec :
+#### Review `H800 x 2` test of Prefill Decode Colocated Architecture
+
+In a `H800 x 2 (DGX SuperPod)` test config, each node is connected via infiniband, the max of input throughput arrives at 20 k toks/sec :
 
 <figure>
 <p align="center">
-<img src="assets/img/aggregated_input_tput.png" alt="aggregated input tput achieve max at specific batch_size x otuput_length" style="width:50%">
+<img src="assets/img/aggregated_input_tput.png" alt="aggregated input throughput achieve max at specific batch_size x otuput_length" style="width:50%">
 </p>
-<figcaption style="text-align:center">aggregated input tput achieve max at specific batch_size x otuput_length</figcaption>
+<figcaption style="text-align:center">aggregated input throughput achieve max at specific batch_size x otuput_length</figcaption>
 </figure>
 
 <br />
 
-When `batch size x output length` exeeds `128x128`, we see input tput drops significantly with sudden and steep growth of TTFT, while output tput increase gradually as batch size incrase to reach its max.
+When `batch size x output length` exceeds `128x128`, we observed  significant drop significantly in input throughput, accompanied with a sudden and steep growth of TTFT. In contrast, output throughput increase gradually with larger batch size, reaching its max.
 
 <br />
 
 <figure>
 <p align="center">
-<img src="assets/img/tput-ttft.png" alt="input tput and ttft" style="width:50%">
+<img src="assets/img/tput-ttft.png" alt="input throughput and ttft" style="width:50%">
 </p>
-<figcaption style="text-align:center">input tput and ttft</figcaption>
+<figcaption style="text-align:center">input throughput and ttft</figcaption>
 </figure>
 
 <br />
 
-All of these statistics indicate that maximum of prefill and decodes throughput generates different workloads.
+All of these statistics indicate that achieving maximum of prefill and decode throughput involves different workloads pattern.
 
 <br />
 
-Intuitively, in disaggregated serving architecture, goodput (throughput under SLO, i.e., TTFT < 2s, ITL < 50ms) of prefill nodes with suitable chunk-prefill size, is bounded certain batch size, since KV cache transfer speed is fixed.
+Intuitively, in disaggregated serving architecture, goodput of prefill nodes with suitable chunk-prefill size, is bounded certain batch size, since KV cache transfer speed is fixed.
 
 ## Benchmarking Method
 
@@ -82,7 +86,7 @@ Investigating over all feasible disaggregation configs with 13 x H800 DGX Supper
 
 <br />
 
-To prepare for the test, we first align our hardware and software with latest open source community, and followed instructions from SGLang team [^7] to prepare the configurationf files :
+To prepare for the test, we first align our hardware and software with the latest open source community, and followed instructions from SGLang team [^1] to prepare the configuration files :
 
 <br />
 
@@ -95,9 +99,11 @@ To prepare for the test, we first align our hardware and software with latest op
 
 <br />
 
-After obtaining the config files, and well preparing testing scripts, since we are using JIT kernel compilation services in SGLang, we warm up services with few queries batches with CURL API , then proceed to collect test stat.
+After obtaining the configuration files, and preparing the test scripts properly, we warm up services with a few batches of queries batches via CURL API since JIT kernel compilation services takes a long time from cold start in SGLang. Once warmed up, we proceed to collect test statistics.
 
-This helps reduce bias of re-use of KV cache blocks and eliminiate JIT comppilation time from testing result.
+<br />
+
+This helps reduce the bias caused by KV cache reuse and eliminate JIT compilation overhead from testing result.
 
 #### Hardware & Software
 
@@ -114,8 +120,7 @@ The hardware of H800 SuperPod used in this experiment organized in racks :
 
 <br />
 
-
-H800 DGX has almost equal computing abilities as H100 DGX, except for FP64/FP32 and almost half of communication bandwidth of H100 DGX machine. Each H800 is connected to 1 mellanox CX-7 (MT2910) NIC card. And each CX-7 NIC connects to infiniband switch, runs at maximum of 50 GB/s.
+The NVIDIA H800 DGX has compute performance comparable to the H100 DGX, except for FP64/FP32 data type and approximate half of the communication bandwidth due to reduced NVLINK configuration. Each H800 card is connected to a single mellanox CX-7 (MT2910) NIC card, which connects to an infiniband switch, supports a peak bidirectional bandwidth of 50 GB/s.
 
 <br />
 
@@ -536,7 +541,7 @@ For P2D2 configuation, due to limited space reserved for KV cache (P node 65 GB 
 
 <br />
 
-| batch_size | Input | Output | latency | Input Tput | Output Tput  | Overal Tput | TTFT (95) (s) | MAX transfer (MB/s) | last toks generation (toks/sec) | comment                                                                                                                                                                                                                                                                                 |
+| batch_size | Input | Output | latency | Input throughput | Output throughput  | Overal throughput | TTFT (95) (s) | MAX transfer (MB/s) | last toks generation (toks/sec) | comment                                                                                                                                                                                                                                                                                 |
 | ---------- | ----- | ------ | ------- | ---------- | ------------ | ----------- | ------------- | ------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1024       | 1024  | 1      | 72.97   | 14,370.73  | 1,367,184.47 | 14,384.62   | 72.7          | 109.82              | 22.19                           |                                                                                                                                                                                                                                                                                         |
 | 1024       | 1024  | 32     |         |            |              |             |               |                     |                                 | exception KVTransferError(bootstrap_room=8053843183886796622): Request 8053843183886796622 timed out after 120.0s in KVPoll.Bootstrapping", 'status_code': 500, 'err_type': None}, 'prompt_tokens': 512, 'completion_tokens': 0, 'cached_tokens': 0, 'e2e_latency': 124.1377534866333}} |
@@ -784,8 +789,8 @@ Thanks to Mr Yiwen Wang (yepmanwong@hkgai.org) and Prof Wei Xue (weixue@ust.hk) 
       <th>input_lenght</th>
       <th>output_length</th>
       <th>latency (s)</th>
-      <th>input tput (toks/sec)</th>
-      <th>output tput (toks/sec)</th>
+      <th>input throughput (toks/sec)</th>
+      <th>output throughput (toks/sec)</th>
       <th>ttft (s)</th>
       <th>last tok generation (tok/s)</th>
     </tr>
