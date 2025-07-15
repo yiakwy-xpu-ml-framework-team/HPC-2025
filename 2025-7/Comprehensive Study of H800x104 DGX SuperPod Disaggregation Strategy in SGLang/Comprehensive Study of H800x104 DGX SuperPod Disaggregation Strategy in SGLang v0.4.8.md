@@ -9,7 +9,7 @@ caption {
 
 > We validated maximum prefill and decode disaggregated throughput for 13 x H800 DGX SuperPod at the speed of around 1.3 million toks/sec input throughput and 20 k toks/sec output throughput over various of disaggregation settings such as P4D9, P4D6. P2D4, P2D2 in server online test (benchmark with SGLang **bench_one_batch_server.py** [^1] to meausre URL API calling in server side), followed by user side online test under service level objectives (SLO) (benchmark with evalscope [^2] to measure OpenAI compatible URL API with API Key in an endpoint) at the speed of output throughput of 25k toks/sec at concurrencies of 50, 55k toks/sec at concurrencies of 150 for small queries. Given 1k, 2k, 4k input, when **batch size * input length** exceeds certainer number, TTFT grow suddenly and steeply, overall latency dominated by TTFT since transferring of KV cache takes major time. Balance between gpu utilization and goodput rate can be achieved if input sequnce length (few hundred MB * batch size / KV cache transfer speed) is bounded and much larger than output length, preferable 4:1 in H800 DGX SuperPod. High TTFT leads to unreliable output throughput and low goodput rate in server side online test.
 
-Authors : [LEI WANG](https://github.com/yiakwy-xpu-ml-framework-team) (yiak.wy@gmail.com, Researcher and PhD candidate in HKUST)
+Authors : [LEI WANG](https://github.com/yiakwy-xpu-ml-framework-team) (yiak.wy@gmail.com, Researcher and PhD candidate in HKUST), Andy Guo, Yi Chao, Yujie Pu, Yiwen Wang, Xue Wei
 
 ## Motivation & Background
 
