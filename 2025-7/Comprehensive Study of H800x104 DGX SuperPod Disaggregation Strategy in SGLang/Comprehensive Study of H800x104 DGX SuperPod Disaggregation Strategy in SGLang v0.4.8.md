@@ -7,15 +7,22 @@ caption {
 }
 </style>
 
-> We evaluated the maximum prefill and decode goodput (throughput under SLO, i.e., TTFT < 2s, ITL < 50ms) [^6] in a disaggregated LLM inference architecture using 13 H800 DGX SuperPod nodes. The system achieved approximately 1.3 million tokens per second (toks/sec) for input throughput and 20,000 toks/sec for output throughput across various server-side disaggregation configurations (P4D9, P4D6, P2D4, P4D2, P2D2). Server-side performance was measured using the SGLang bench_one_batch_server.py benchmark [^1], which evaluates URL API call performance.
-On the user side, we conducted online observations under service level objectives (SLOs), using evalscope [^2] to benchmark OpenAI-compatible endpoint APIs with API key authentication. Under these conditions, the system sustained 25,000 toks/sec output throughput at a concurrency of 50, and 55,000 toks/sec at a concurrency of 150 for small input queries. We observed that when the product of `batch size × input length` exceeds a certain threshold (e.g., due to KV cache transfer limitations), Time to First Token (TTFT) increases sharply. As a result, overall latency becomes dominated by TTFT. To maintain high GPU utilization and goodput, the input sequence length should be significantly longer than the output—ideally maintaining an input-to-output ratio of 4:1 or 5:1. This balance is particularly effective on H800 DGX SuperPod systems. Excessively high TTFT leads to unstable output throughput and a significant decline in server-side goodput.
+> We evaluated the maximum prefill and decode goodput (throughput under SLO, i.e., TTFT < 2s, ITL < 50ms) [^6] in a disaggregated LLM inference architecture using 13x8 H800 DGX SuperPod nodes. The system achieved approximately 1.3 million tokens per second (toks/sec) for input throughput and 20,000 toks/sec for max output throughput across various server-side disaggregation configurations (P3x3D4, P4D9, P4D6, P2D4, P4D2, P2D2). In the major cases, prefill is the bottlenect in our experiment, bringing us with large TTFT. Reference to the computed Prefill/Decodes nodes ratio `1.4` derived from DeepSeek workload [^9], to achieve high server side goodput rates, we tried larger `P` nodes group (`3`) and smaller tp size (`48`). Performance was measured using the SGLang `bench_one_batch_server.py` benchmark [^1], which evaluates URL API call performance and later `genai-bench` [^10] to generate more reliable output throughput at different level of concurrencies. On the user side, we conducted online observations under service level objectives (SLOs), using evalscope [^2] to benchmark OpenAI-compatible endpoint APIs with API key authentication. Under these conditions, the system sustained 25,000 toks/sec output throughput at a concurrency of 50, and 55,000 toks/sec at a concurrency of 150 for small input queries. We observed that when `batch size × input length` exceeds a certain threshold (e.g., due to KV cache transfer limitations), Time to First Token (TTFT) increases sharply. Morever, to obtain better goodput rate, input seqeunce length (ISL) over output sequence length (OSL) should be at specific ratio, preferablely 4:1. As a result, overall latency dominated by TTFT if we want to achieve high thoughput with larger batch sizes and sequence length. To maintain high GPU utilization and goodput, concurrencies should be less than 128 to avoid sharp growth of TTFT. This balance is particularly effective on `H800` DGX SuperPod systems. Excessively high TTFT leads to unstable output throughput and a significant decline in server-side goodput.
 
 
-Authors : [LEI WANG](https://github.com/yiakwy-xpu-ml-framework-team) (yiak.wy@gmail.com, Researcher and PhD candidate in HKUST), Andy Guo, Yi Chao, Yujie Pu, Yiwen Wang, Xue Wei
+Authors : [LEI WANG](https://github.com/yiakwy-xpu-ml-framework-team) (yiakwang@ust.hk), Yujie Pu (yujiepu@ust.hk), Andy Guo , Yi Chao (yepmanwong@hkgai.org), Yiwen Wang, Xue Wei
 
 ## Motivation & Background
 
-In Prefill-Decode aggregated LLM inference architecture, an interleveating schedule plan between prefill tokens and decodes tokens was implemented in vLLM bofore [2024 Q2](https://github.com/vllm-project/vllm/issues/3861), and later improved with continuous scheduling [^3] higher overall GPU utimizaton. However due to distinct computing natures of prefill and decode stages, continous batching of full un-chunked prefill tokens of incoming requests with decode tokens of running requests increase significantly decode latency. This leads to large inter token latency (ITL) and degrades responsiveness. To address this issue, chunk-prefill feature [^4] introduced in [PR#3130](https://github.com/vllm-project/vllm/issues/3130) was proposed that chunked prefill tokens of incoming requests and decode tokens of runing requests are batched together in a colocated system as demonstrated below for better ITL and GPU utilization:
+In Prefill-Decode aggregated LLM inference architecture, an interleveating schedule plan between prefill tokens and decodes tokens was implemented in vLLM bofore [2024 Q2](https://github.com/vllm-project/vllm/issues/3861), and later improved with continuous scheduling [^3] with higher overall GPU utimizaton.
+
+<br />
+
+However due to distinct computing natures of prefill and decode stages, continous batching of full un-chunked prefill tokens of incoming requests with decode tokens of running requests increase decode latency significantly. This leads to large inter token latency (ITL) and degrades responsiveness.
+
+<br />
+
+To address this issue, chunk-prefill feature [^4] was proposed and introduced in [PR#3130](https://github.com/vllm-project/vllm/issues/3130) so that chunked prefill tokens of incoming requests and decode tokens of runing requests are batched together in a colocated system as demonstrated below for better ITL and GPU utilization:
 
 <br />
 
@@ -28,11 +35,341 @@ In Prefill-Decode aggregated LLM inference architecture, an interleveating sched
 
 <br />
 
-However chunked-prefill does not take into account distinct computing natures of prefilling and decodeing. The process of decoding is often captured by a cuda graph for multiple rounds of generation, hence addtional overhead brought in when decoding process is batched with chunked prefill process and cuda graph is not viable. It is very likely to happen.
+However chunked-prefill does not take into account distinct computing natures of prefilling and decodeing.
+
+<br />
+
+The process of decoding is often captured by a cuda graph for multiple rounds of generation, hence addtional overhead brought in when decoding process is batched with chunked prefill process and cuda graph is not viable.
 
 <br />
 
 Moreover, as observed in DistServe [^4] [^5] [^6] on `13 B` dense model and our experiments on `671 B` MoE model, prefill computation cost increases significantly once `batch_size x output_length` exceeds a certain threshold (i.e. `128 x 128`) in a colocated serving system, regardless of chunk-fill size.
+
+
+<br />
+
+Hereby disaggregated serving architecture was proposed [^4]. DeepSeek further reduces latencies, and throughput by DeepEP and MLA, which were quickly integrated into SGLang, and achieves epic 73.7k toks/node/sec and 14.8k toks/node/sec under SLO at the deployment unit `P4D18`.
+
+<br />
+
+However, there is a common misunderstanding that the number of P should be larger than the number D since DeepSeek does not disclose the real raio of P nodes over D in this its blog. [^8].
+
+<br />
+
+According to its revealed total served tokens `608B input tokens`, and `168B output tokens` within 24 hours a day, and the Prefill/Decode speeds, the total number of prefill nodes used is estimated to be
+
+$$955 = 608 * 1e^{10} / (24 * 3600 * 73.7 * 1e^3)$$
+
+, and total number of decode nodes is estimated to be
+
+$$1314 = 168 * 1e^{10} / (24 * 3600 * 14.8 * 1e^3)$$
+
+<br />
+
+The reference test ratio of Prefill/Decode nodes is computed as `1.4`, and the P4D18 configuration ratio is `3.27 : 1`. For H800 `13x8 DGX SuperPod`, P/D disaggregation configuation `P3x2D4`, `P3x3D4` and `P4x2D3` are hence recommended. Since Prefill is more likely to be the bottlenect of the system as we analyze, we limited the TP size to 4, becuase larger TP size degregrads inference speed and less TP size leads to less volume reserved for KV cache.
+
+<br />
+
+In our test, `P3x3D4` and `P4D6` outperforms P9D4 with better TTFT due to less TP size, and relative more prefill stage processing capacities:
+
+<br />
+
+<div style="">
+<table border="0" cellpadding="0" cellspacing="0" width="1026" style="border-collapse: collapse; width: 769pt;">
+  <caption>P4D6, P3x3D4 outperforms P4D9 with better TTFT</cpation>
+  <thead>
+    <tr height="21" style="height: 16pt;">
+      <th></th>
+      <th>Concurrency</th>
+      <th>Input</th>
+      <th>Output</th>
+      <th>latency</th>
+      <th>Input Tput</th>
+      <th>Output Tput</th>
+      <th>Overall Tput</th>
+      <th>TTFT (95) (s)</th>
+    </tr>
+  </thead><colgroup><col width="64" style="width: 48pt;"><col width="113" style="width: 85pt;"><col width="87" span="2" style="width: 65pt;"><col width="132" style="width: 99pt;"><col width="136" style="width: 102pt;"><col width="148" style="width: 111pt;"><col width="128" style="width: 96pt;"><col width="131" style="width: 98pt;"></colgroup>
+  <tbody>
+    <tr height="21" style="height: 16pt;">
+      <td height="21" class="xl66" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;">P3x3D4</td>
+      <td align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;">1</td>
+      <td align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;">2000</td>
+      <td align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;">200</td>
+      <td class="xl68" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">901.13</td>
+      <td class="xl68" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">214.74</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">21.75</td>
+      <td class="xl81" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;"></td>
+      <td class="xl82" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(112, 173, 71);">0.44</td>
+    </tr>
+    <tr height="21" style="height: 16pt;">
+      <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
+      <td align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;">2</td>
+      <td align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;">2000</td>
+      <td align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;">200</td>
+      <td class="xl68" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">611.92</td>
+      <td class="xl68" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">413.22</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">41.83</td>
+      <td class="xl81" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;"></td>
+      <td class="xl82" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(112, 173, 71);">0.61</td>
+    </tr>
+    <tr height="21" style="height: 16pt;">
+      <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
+      <td align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;">8</td>
+      <td align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;">2000</td>
+      <td align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;">200</td>
+      <td class="xl68" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">160.74</td>
+      <td class="xl68" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">1,587.72</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">160.74</td>
+      <td class="xl81" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;"></td>
+      <td class="xl82" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(112, 173, 71);">2.69</td>
+    </tr>
+    <tr height="21" style="height: 16pt;">
+      <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
+      <td align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;">64</td>
+      <td align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;">2000</td>
+      <td align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;">200</td>
+      <td class="xl68" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">27.27</td>
+      <td class="xl68" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">9,267.40</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">938.58</td>
+      <td class="xl81" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;"></td>
+      <td class="xl82" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(112, 173, 71);">2.91</td>
+    </tr>
+    <tr height="21" style="height: 16pt;">
+      <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
+      <td align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;">128</td>
+      <td align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;">2000</td>
+      <td align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;">200</td>
+      <td class="xl68" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">18.64</td>
+      <td class="xl68" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">13,555.56</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">1,372.96</td>
+      <td class="xl81" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;"></td>
+      <td class="xl83" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(169, 208, 142);">7.69</td>
+    </tr>
+    <tr height="21" style="height: 16pt;">
+      <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
+      <td align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;">256</td>
+      <td align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;">2000</td>
+      <td align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;">200</td>
+      <td class="xl68" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">21.60</td>
+      <td class="xl68" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">23,398.95</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">2,370.23</td>
+      <td class="xl81" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;"></td>
+      <td class="xl83" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(169, 208, 142);">8.4</td>
+    </tr>
+    <tr height="21" style="height: 16pt;">
+      <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
+      <td align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;">512</td>
+      <td align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;">2000</td>
+      <td align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;">500</td>
+      <td class="xl68" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">522.80</td>
+      <td class="xl68" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">31,016.53</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">7,852.82</td>
+      <td class="xl81" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;"></td>
+      <td class="xl83" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(169, 208, 142);">4.97</td>
+    </tr>
+    <tr height="21" style="height: 16pt;">
+      <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
+      <td class="xl91" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(169, 208, 142);">1024</td>
+      <td class="xl91" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(169, 208, 142);">2000</td>
+      <td class="xl91" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(169, 208, 142);">500</td>
+      <td class="xl92" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(169, 208, 142);">374.90</td>
+      <td class="xl92" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(169, 208, 142);">53,494.96</td>
+      <td class="xl89" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(226, 239, 218);">13,543.28</td>
+      <td class="xl81" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;"></td>
+      <td class="xl83" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(169, 208, 142);">9.85</td>
+    </tr>
+    <tr height="21" style="height: 16pt;">
+      <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;">P4D6</td>
+      <td class="xl67" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;"></td>
+      <td style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;"></td>
+      <td style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;"></td>
+      <td class="xl77" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;"></td>
+      <td class="xl79" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;"></td>
+      <td class="xl79" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;"></td>
+      <td class="xl81" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;"></td>
+      <td class="xl76" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;"></td>
+    </tr>
+    <tr height="21" style="height: 16pt;">
+      <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
+      <td class="xl71" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">1024</td>
+      <td class="xl71" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">1024</td>
+      <td class="xl71" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">32</td>
+      <td class="xl85" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">15.85</td>
+      <td class="xl74" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 11pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">75,914.78</td>
+      <td class="xl90" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(226, 239, 218);">16,103.44</td>
+      <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">68,234.85</td>
+      <td class="xl84" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(226, 239, 218);">13.81</td>
+    </tr>
+    <tr height="21" style="height: 16pt;">
+      <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
+      <td class="xl73" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(121, 176, 66);">1024</td>
+      <td class="xl73" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(121, 176, 66);">1024</td>
+      <td class="xl73" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(121, 176, 66);">128</td>
+      <td class="xl87" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(121, 176, 66);">18.30</td>
+      <td class="xl72" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 11pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(121, 176, 66);">100,663.25</td>
+      <td class="xl90" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(226, 239, 218);">16,626.85</td>
+      <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">64,462.25</td>
+      <td class="xl84" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(226, 239, 218);">10.42</td>
+    </tr>
+    <tr height="21" style="height: 16pt;">
+      <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
+      <td class="xl73" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(121, 176, 66);">1024</td>
+      <td class="xl73" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(121, 176, 66);">1024</td>
+      <td class="xl73" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(121, 176, 66);">256</td>
+      <td class="xl87" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(121, 176, 66);">23.97</td>
+      <td class="xl70" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 11pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(121, 176, 66);">95,540.18</td>
+      <td class="xl88" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(169, 208, 142);">20,176.66</td>
+      <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">54,686.99</td>
+      <td class="xl84" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(226, 239, 218);">10.98</td>
+    </tr>
+    <tr height="21" style="height: 16pt;">
+      <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
+      <td class="xl71" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">1024</td>
+      <td class="xl71" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">1024</td>
+      <td class="xl71" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">512</td>
+      <td class="xl85" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">39.84</td>
+      <td class="xl69" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 11pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">79,651.21</td>
+      <td class="xl93" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(198, 224, 180);">19,654.31</td>
+      <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">39,479.45</td>
+      <td class="xl84" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(226, 239, 218);">13.16</td>
+    </tr>
+    <tr height="21" style="height: 16pt;">
+      <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
+      <td class="xl71" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">2048</td>
+      <td class="xl71" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">2048</td>
+      <td class="xl71" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">256</td>
+      <td class="xl85" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">60.08</td>
+      <td class="xl69" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 11pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">77,367.28</td>
+      <td class="xl80" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">89,299.88</td>
+      <td class="xl80" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">78,533.27</td>
+      <td class="xl78" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(255, 108, 0);">54.21</td>
+    </tr>
+    <tr height="21" style="height: 16pt;">
+      <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;">P4D9</td>
+      <td style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;"></td>
+      <td style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;"></td>
+      <td style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;"></td>
+      <td class="xl68" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;"></td>
+      <td class="xl68" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;"></td>
+      <td class="xl81" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;"></td>
+      <td class="xl81" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;"></td>
+      <td class="xl67" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;"></td>
+    </tr>
+    <tr height="21" style="height: 16pt;">
+      <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">64.00</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">128.00</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">128.00</td>
+      <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">12.51</td>
+      <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">1,701.88</td>
+      <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">1,064.16</td>
+      <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">1,309.50</td>
+      <td class="xl88" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(169, 208, 142);">4.81</td>
+    </tr>
+    <tr height="21" style="height: 16pt;">
+      <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">64.00</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">4,096.00</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">128.00</td>
+      <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">20.21</td>
+      <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">22,185.68</td>
+      <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">975.58</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">13,374.37</td>
+      <td class="xl90" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(226, 239, 218);">11.82</td>
+    </tr>
+    <tr height="21" style="height: 16pt;">
+      <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">64.00</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">2,048.00</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">128.00</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">41.70</td>
+      <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">3,553.74</td>
+      <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">1,699.56</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">3,339.43</td>
+      <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">36.88</td>
+    </tr>
+    <tr height="21" style="height: 16pt;">
+      <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">64.00</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">1,024.00</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">128.00</td>
+      <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">69.72</td>
+      <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">1,017.38</td>
+      <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">1,543.28</td>
+      <td class="xl81" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;"></td>
+      <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">64.42</td>
+    </tr>
+    <tr height="21" style="height: 16pt;">
+      <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
+      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">512.00</td>
+      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">4,096.00</td>
+      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">128.00</td>
+      <td class="xl80" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">36.75</td>
+      <td class="xl80" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">85,749.88</td>
+      <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">5,332.19</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">58,853.06</td>
+      <td class="xl94" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(255, 108, 0);">24.46</td>
+    </tr>
+    <tr height="21" style="height: 16pt;">
+      <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">512.00</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">2,048.00</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">128.00</td>
+      <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">213.43</td>
+      <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">5,021.26</td>
+      <td class="xl90" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(226, 239, 218);">14,249.05</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">5,220.12</td>
+      <td class="xl95" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: red;">208.83</td>
+    </tr>
+    <tr height="21" style="height: 16pt;">
+      <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">512.00</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">1,024.00</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">128.00</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">112.81</td>
+      <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">4,849.07</td>
+      <td class="xl90" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(226, 239, 218);">13,976.04</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">5,228.45</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">108.12</td>
+    </tr>
+    <tr height="21" style="height: 16pt;">
+      <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
+      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">1,024.00</td>
+      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">4,096.00</td>
+      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">128.00</td>
+      <td class="xl80" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">58.47</td>
+      <td class="xl80" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">77,876.48</td>
+      <td class="xl88" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(169, 208, 142);">28,407.07</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">73,972.85</td>
+      <td class="xl94" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(255, 108, 0);">53.86</td>
+    </tr>
+    <tr height="21" style="height: 16pt;">
+      <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
+      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">2,048.00</td>
+      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">4,096.00</td>
+      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">256.00</td>
+      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">105.21</td>
+      <td class="xl80" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">80,227.44</td>
+      <td class="xl80" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">808,820.03</td>
+      <td class="xl80" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">84,716.46</td>
+      <td class="xl95" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: red;">104.56</td>
+    </tr>
+    <tr height="21" style="height: 16pt;">
+      <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
+      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">2,048.00</td>
+      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">2,048.00</td>
+      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">256.00</td>
+      <td class="xl80" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">72.53</td>
+      <td class="xl80" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">89,296.97</td>
+      <td class="xl88" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(169, 208, 142);">20,513.48</td>
+      <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">65,058.45</td>
+      <td class="xl96" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(255, 108, 0);">46.97</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
 
 <br />
 
@@ -40,7 +377,13 @@ We conducted both aggregated and disaggregated serving experiments at scales wit
 
 <br />
 
-Given an input sequence length (in_seq_len : 128 ~ 4096) and short output sequence length (out_seq_len : 1~256), tuning over various batch sizes (bs), and concluded that maximum of prefill goodput, when seving DeepSeek V3 alike massive MoE model, arrives at specific `batch size (bs) x output length (out_seq_len)` in an aggregated LLM inference architecture, and at specific `batch size (bs) * input length (in_seq_len)` in a disaggregated LLM inference architecture.
+Given an input sequence length (in_seq_len : 128 ~ 4096) and short output sequence length (out_seq_len : 1~256), tuning over various batch sizes (bs), we concluded that
+
+<br />
+
+- maximum of prefill goodput, when seving DeepSeek V3 alike massive MoE model, arrives at specific `batch size (bs) x output length (out_seq_len)` in an aggregated LLM inference architecture, and at specific `batch size (bs) * input length (in_seq_len)` in a disaggregated LLM inference architecture;
+
+- prefill is more likely to be the bottlenect, hence more prefill nodes (1:1) are preferred;
 
 <br />
 
@@ -52,6 +395,8 @@ Unlike serving `13 B` dense model in DistServe [^4] [^5] [^6] , prefill goodput 
 
 In a `H800 x 2 (DGX SuperPod)` test config, each node is connected via infiniband, the max of input throughput arrives at 20 k toks/sec :
 
+<br />
+
 <figure>
 <p align="center">
 <img src="assets/img/aggregated_input_tput.png" alt="aggregated input throughput achieve max at specific batch_size x otuput_length" style="width:50%">
@@ -61,7 +406,7 @@ In a `H800 x 2 (DGX SuperPod)` test config, each node is connected via infiniban
 
 <br />
 
-When `batch size x output length` exceeds `128x128`, we observed  significant drop significantly in input throughput, accompanied with a sudden and steep growth of TTFT. In contrast, output throughput increase gradually with larger batch size, reaching its max.
+When `batch size x output length` exceeds `128x128`, we observed  significant drop in input throughput, accompanied with a sudden and steep growth of TTFT. In contrast, output throughput increase gradually with larger batch size, reaching its max.
 
 <br />
 
@@ -78,7 +423,97 @@ All of these statistics indicate that achieving maximum of prefill and decode th
 
 <br />
 
-Intuitively, in disaggregated serving architecture, goodput of prefill nodes with suitable chunk-prefill size, is bounded certain batch size, since KV cache transfer speed is fixed.
+Intuitively, in a disaggregated serving architecture, goodput of prefill nodes with suitable chunk-prefill size, TP sizes, is bounded with certain batch size, since KV cache transfer speed is limited.
+
+#### How P/D works in SGLang
+
+SGLang loader balancer service now supports multiple Prefill (P) nodes setup (multiple P nodes master addresses), and multiple Decode (D) nodes setup (multiple D nodes master addresses):
+
+<br />
+
+```
+# start_lb_service.sh
+...
+docker_args=$(echo -it --rm --privileged \
+ --name $tag \
+ --ulimit memlock=-1:-1 --net=host --cap-add=IPC_LOCK --ipc=host \
+ --device=/dev/infiniband \
+ -v $(readlink -f $SGLang):/workspace \
+ -v $MODEL_DIR:/root/models \
+ -v /etc/localtime:/etc/localtime:ro \
+ -e LOG_DIR=$LOG_DIR \
+ --workdir /workspace \
+ --cpus=64 \
+ --shm-size 32g \
+ $IMG
+)
+
+# P3x3D4 setup
+docker run --gpus all "${docker_args[@]}" python -m sglang.srt.disaggregation.mini_lb \
+  --prefill "http://${prefill_group_0_master_addr}:${api_port}" \
+            "http://${prefill_group_1_master_addr}:${api_port}" \
+            "http://${prefill_group_2_master_addr}:${api_port}" \
+  --decode "http://${decode_group_0_master_addr}:${api_port}" \
+  --rust-lb
+```
+
+You can also tune TP size as P node could has less TP size as D nodes to achieve better TTFT.
+
+<br />
+
+Two load balancer provided `RustLB` and old `MiniLoadBalancer`. They follow the same HTTP API to redirect HTTP requests to prefill and decode servers respectively:
+
+```
+# load balance API interface
+INFO:     10.33.4.141:41296 - "GET /get_server_info HTTP/1.1" 200 OK
+INFO:     10.33.4.141:41312 - "POST /flush_cache HTTP/1.1" 200 OK
+INFO:     10.33.4.141:41328 - "POST /generate HTTP/1.1" 200 OK
+```
+
+<br />
+
+```
+# Rust : sgl-pdlb/src/lb_state.rs
+    pub async fn generate(
+        &self,
+        api_path: &str,
+        mut req: Box<dyn Bootstrap>,
+    ) -> Result<HttpResponse, actix_web::Error> {
+        let (prefill, decode) = self.strategy_lb.select_pair(&self.client).await;
+        let stream = req.is_stream();
+        req.add_bootstrap_info(&prefill)?;
+        let json = serde_json::to_value(req)?;
+        let prefill_task = self.route_one(&prefill, Method::POST, api_path, Some(&json), false);
+        let decode_task = self.route_one(&decode, Method::POST, api_path, Some(&json), stream);
+        let (_, decode_response) = tokio::join!(prefill_task, decode_task);
+        decode_response?.into()
+    }
+```
+
+<br />
+
+The problem of SGLang Loadblancer is that the selection of a pair of prefill server and decode server is not traffic based. Then you can not garantee load balance among prefill serveres.
+
+<br />
+
+Prefill server always return frist to complete KV cache generation:
+
+<br />
+
+Refering to Dynamo workflow [^11], we draft a simple workflow for SGLang RustLB based P/D architecture to better understand how we can optimize the workflow later :
+
+<br />
+
+<figure>
+<p align="center">
+<img src="assets/img/SGLangPDWorkFlow.drawio.png" alt="SGLang v4.8.0 P/D workflow" style="width:50%">
+</p>
+<figcaption style="text-align:center">aggregated input throughput achieve max at specific batch_size x otuput_length</figcaption>
+</figure>
+
+<br />
+
+Each P/D process start a boundground thread to run a forever event loop to gather requests, the batch of input and ncessary KV cache to start inference.
 
 ## Benchmarking Method
 
@@ -99,11 +534,7 @@ To prepare for the test, we first align our hardware and software with the lates
 
 <br />
 
-After obtaining the configuration files, and preparing the test scripts properly, we warm up services with a few batches of queries batches via CURL API since JIT kernel compilation services takes a long time from cold start in SGLang. Once warmed up, we proceed to collect test statistics.
-
-<br />
-
-This helps reduce the bias caused by KV cache reuse and eliminate JIT compilation overhead from testing result.
+After obtaining the configuration files, and preparing the test scripts properly, we warm up services with a few batches of queries via CURL API since JIT kernel compilation services take a long time from cold start of SGLang event loop workers.  Once warmed up, we proceed to collect test statistics.
 
 #### Hardware & Software
 
@@ -124,7 +555,7 @@ The NVIDIA H800 DGX has compute performance comparable to the H100 DGX, except f
 
 <br />
 
-In a single node NCCL test, `nccl_all_reduce` runs at 213 GB/s bus bandwidth; In two nodes test, `nccl_all_reduce runs at 171 GB/s bus bandwidth.
+In a single node NCCL test, `nccl_all_reduce` runs at 213 GB/s bus bandwidth. In two nodes test, `nccl_all_reduce` runs at 171 GB/s bus bandwidth. In a rail test (all GPUs cross racks connected with the same ib link), `nccl_all_reduce` runs at 49 GB/s.
 
 <br />
 
@@ -134,9 +565,7 @@ Most of our communication functions in P/D disaggregation test runs DeepEP with 
 
 > Deepep : deep-ep==1.1.0+c50f3d6
 
-<br />
-
-For the moment disaggregatin backend is set to mooncake, but we will try others later:
+For now, we choose mooncake as our disaggregation backend, but other backends will be tried later:
 
 ```
 # optional for disaggregation option
@@ -146,13 +575,15 @@ disaggregation_opt=" \
 "
 ```
 
-> mooncake-transfer-engine==v0.3.4
-
-The latest transfer engine is 10x faster ( see [PR#499](https://github.com/kvcache-ai/Mooncake/pull/499) and [PR#7236](https://github.com/sgl-project/sglang/pull/7236) ) than that was used in May 2025.
+We require the latest transfer engine as it is 10x faster ( see [PR#499](https://github.com/kvcache-ai/Mooncake/pull/499) and [PR#7236](https://github.com/sgl-project/sglang/pull/7236) ) than that was used in May 2025.
 
 <br />
 
-Tunning DeepEP is the first step in our test. Prefill nodes are 2 and 4 (3 prefill nodes are not possible in current configuration for SGLang v0.4.8) :
+> mooncake-transfer-engine==v0.3.4
+
+<br />
+
+Tunning DeepEP is the first step in our test. Prefill nodes are 2, 3 (direct use of 3 prefill nodes may cause problem in current configuration for SGLang v0.4.8) and 4 :
 
 <br />
 
@@ -168,7 +599,7 @@ In this experiment, DeepEP test shows that the performance for `bf16` is much hi
 <br />
 
 ```
-# env - nccl
+# env - nccl 2.23, nccl 2.27 symmetric memroy branch
 export NCCL_IB_HCA=mlx5_0,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_9,mlx5_10,mlx5_11
 
 # traffic class for QoS tunning
@@ -211,7 +642,13 @@ Successufl tuning should expect to see this:
 
 <br />
 
-By default in SGLang v0.4.0, DeepGEMM is not in use, and there is no GEMM/group GEMM configs for fused MoE kernels running in H800, so we fine tuned fused MoE kerenl to generate H800 configs.
+In SGLang v0.4.8, DeepGEMM is by default not in use, and there is no tunning configs for fused MoE triton kernels running in H800.
+
+<br />
+
+So we fine tuned fused MoE triton kernels to generate triton kernel configs for H800 and enable DeepGEMM JIT GEMM kernel.
+
+<br />
 
 Due to the system memory limit in H800, depolyment unit for Prefill and Decode are carefully selected from :
 
@@ -226,7 +663,7 @@ Due to the system memory limit in H800, depolyment unit for Prefill and Decode a
 
 In our testing scripts, we classified configs as `scaling config`, `model info`, `server info`, `basic config`, `disaggregation config`, `tuning parameters`, `envrionmental variables`.
 
-#### Config
+#### Common Basic Config
 
 ```
 #### Scaling config
@@ -304,7 +741,9 @@ disaggregation_opt=" \
 "
 ```
 
-These are common configs for prefill and decode disaggregation roles where `WORLD_SIZE`, `TP`, `DP`, and `page_size` are tunable.
+These common configs for prefill and decode disaggregation roles contain tunnable parameters `WORLD_SIZE`, `TP`, `DP`, `max_running_request_size`, `page_size`.
+
+`max_running_request_size` affects the batch size and buffer size. Page size affects number tokens transfered. We recommend to set `max_running_request_size` to `128`, and `page_size` to 32.
 
 <br />
 
@@ -433,8 +872,6 @@ decode_node_opt=" \
 "
 ```
 
-<br />
-
 #### Envrionmental Variables
 
 Now SGLang enables GEMM kernels from DeepGEMM, since prefill as we observed, will always be the bottlenect of system goodput when batch size exceeds some level, we enable faster implementation of GEMM from DeepGEMM, moon-cake (0.3.4) as default.
@@ -465,7 +902,6 @@ export NCCL_IB_HCA=mlx5_0,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_9,mlx5_10,mlx5_11
 export NCCL_IB_GID_INDEX=3
 
 export NCCL_SOCKET_IFNAME=ibp24s0,ibp41s0f0,ibp64s0,ibp79s0,ibp94s0,ibp154s0,ibp170s0f0,ibp192s0
-
 ```
 
 #### Tunning parameters.
@@ -474,7 +910,7 @@ The basic tunning parameters are world sizes of prefill nodes and decode nodes :
 
 <br />
 
-We found P4D6 will be great start point to generate high goodput rate in client side, with 1024 batch size, 1K input / 256 output to generate 95 k toks/sec input throughput, 20 k toks/sec output throughput at maximum of 356 MB/sec transfer speed, and 10s TTFT, less than 30% of total latency.
+Though we didn't achieve deepseek performance under SLO, we found P4D6 and P3X3D4 output performs of P4D9 in goodput, with 1024 batch size, 1K input / 256 output to generate 95 k toks/sec input throughput, 20 k toks/sec output throughput at maximum of 356 MB/sec transfer speed, and 9~10s TTFT, less than 30% of total latency.
 
 <br />
 
@@ -513,12 +949,11 @@ memory_fraction_static=${memory_fraction_static:-0.81}
 
 <br />
 
-
 #### Additional Options
 
 ###### MTP
 
-In our initial attempt (thanks to Yujie Pu), MTP decoding does not show improvement for the overall goodput, we will invesigate it later:
+In our initial attempt (thanks to Yujie Pu), MTP decoding (with deepseek draft model) does not show improvement for the overall goodput, we will invesigate it later:
 
 <br />
 
@@ -530,8 +965,6 @@ In our initial attempt (thanks to Yujie Pu), MTP decoding does not show improvem
 </figure>
 
 <br />
-
-###### Mixture of aggregated and disaggregated serving architecture
 
 ## Benchmarking of P/D
 
@@ -755,11 +1188,19 @@ When it comes to long query, only maximum 400 toks / sec observed in user side (
 
 ## Conclusion
 
-We make comprehensive study of hosting DeepSeek V3 671 `B` alike model in a disaggregated serving architecture with SGLang V0.4.8, and identified that when `input length * batch size` exceed certain number, TTFT grows suddenly and steeply. Despite the fact that when TTFT is large, the output thoughput of SGLang is not accurate to reflect the output throughput, we still concluded that the overall goodput is blocked by prefill nodes for H800 DGX SuperPod machines.
+We make comprehensive study of hosting DeepSeek V3 671 `B` alike model in a disaggregated serving architecture with SGLang V0.4.8 with 13x8 H800 SuperNodes.
 
 <br />
 
-To improve TTFT and compute efficiency of prefill nodes, we choose smaller chunked-prefill size, and slightly increases the number of prefill nodes up to 4 and decodes nodes up to 6.
+We first concluded and verified that larger prefill groups, perferablely with prefill groups over decodes groups raitio of 3:1, and less TP size, preferablely with total prefill nodes over decodes nodes raitio of 1:1, generate better TTFT and higher goodput.
+
+<br />
+
+We second verified P/D setting for large MoE models that when `input length * batch size` exceed certain number, TTFT grows suddenly and steeply, we should limit `max_running_request_size` in actual deployment.
+
+<br />
+
+To improve TTFT and compute efficiency of prefill nodes, we choose smaller chunked-prefill sizes.
 
 <br />
 
@@ -775,7 +1216,7 @@ Next, we will focus on communication level libraries to unlock the limit of pref
 
 ## Acknowledgement
 
-Thanks to Mr Yiwen Wang (yepmanwong@hkgai.org) and Prof Wei Xue (weixue@ust.hk) for the support and suggestion for this article, and to Andy Guo (guozhenhua@hkgai.org) for user side tests, Yu Jiepu (yujiepu@hkgai.org) for deployment to verify effectiveness of MTP, and to Yi Chao (chao.yi@hkgai.org) for arrangement of resources.
+Thanks to Mr Yiwen Wang (yepmanwong@hkgai.org) and Prof Wei Xue (weixue@ust.hk) for the support and suggestion for this article, and to Andy Guo (guozhenhua@hkgai.org) for user side tests, Yu Jiepu (yujiepu@hkgai.org) for deployment to verify effectiveness of MTP and P3x3D4, and to Yi Chao (chao.yi@hkgai.org) for help of arrangement of resources.
 
 ## Appendix
 
@@ -987,3 +1428,9 @@ Thanks to Mr Yiwen Wang (yepmanwong@hkgai.org) and Prof Wei Xue (weixue@ust.hk) 
 [^7]: Instruction for Running DeepSeek with Large-scale PD and EP, https://github.com/sgl-project/sglang/issues/6017, accessed online on 12 July 2025
 
 [^8]: https://lmsys.org/blog/2025-05-05-large-scale-ep/, accessed online on 12 July 2025
+
+[^9]: DeepSeek OpenWeek : https://github.com/deepseek-ai/open-infra-index?tab=readme-ov-file
+
+[^10]: SGLang genai-bench : https://github.com/sgl-project/genai-bench, accessed online on 18 July
+
+[^11]: https://github.com/ai-dynamo/dynamo/blob/main/docs/images/dynamo_flow.png, accessed online on 18 July
