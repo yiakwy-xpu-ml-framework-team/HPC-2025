@@ -10,7 +10,7 @@ caption {
 > We evaluated the maximum prefill and decode goodput (throughput under SLO, i.e., TTFT < 2s, ITL < 50ms) [^6] in a disaggregated LLM inference architecture using 13x8 H800 DGX SuperPod nodes. The system achieved approximately 1.3 million tokens per second (toks/sec) for input throughput and 20,000 toks/sec for max output throughput across various server-side disaggregation configurations (P3x3D4, P4D9, P4D6, P2D4, P4D2, P2D2). In the major cases, prefill is the bottlenect in our experiment, bringing us with large TTFT. Reference to the computed Prefill/Decodes nodes ratio `1.4` derived from DeepSeek workload [^9], to achieve high server side goodput rates, we tried larger `P` nodes group (`3`) and smaller tp size (`48`). Performance was measured using the SGLang `bench_one_batch_server.py` benchmark [^1], which evaluates URL API call performance and later `genai-bench` [^10] to generate more reliable output throughput at different level of concurrencies. On the user side, we conducted online observations under service level objectives (SLOs), using evalscope [^2] to benchmark OpenAI-compatible endpoint APIs with API key authentication. Under these conditions, the system sustained 25,000 toks/sec output throughput at a concurrency of 50, and 55,000 toks/sec at a concurrency of 150 for small input queries. We observed that when `batch size × input length` exceeds a certain threshold (e.g., due to KV cache transfer limitations), Time to First Token (TTFT) increases sharply. Morever, to obtain better goodput rate, input seqeunce length (ISL) over output sequence length (OSL) should be at specific ratio, preferablely 4:1. As a result, overall latency dominated by TTFT if we want to achieve high thoughput with larger batch sizes and sequence length. To maintain high GPU utilization and goodput, concurrencies should be less than 128 to avoid sharp growth of TTFT. This balance is particularly effective on `H800` DGX SuperPod systems. Excessively high TTFT leads to unstable output throughput and a significant decline in server-side goodput.
 
 
-Authors : [LEI WANG](https://github.com/yiakwy-xpu-ml-framework-team) (yiakwang@ust.hk), Yujie Pu (yujiepu@ust.hk), Andy Guo , Yi Chao (yepmanwong@hkgai.org), Yiwen Wang, Xue Wei
+Authors : [LEI WANG](https://github.com/yiakwy-xpu-ml-framework-team) (yiakwang@ust.hk), Yujie Pu (yujiepu@ust.hk), Andy Guo (guozhenhua@hkgai.org), Yi Chao (chao.yi@hkgai.org), Yiwen Wang (yepmanwong@hkgai.org), Xue Wei (weixue@ust.hk)
 
 ## Motivation & Background
 
@@ -1216,7 +1216,7 @@ Next, we will focus on communication level libraries to unlock the limit of pref
 
 ## Acknowledgement
 
-Thanks to Mr Yiwen Wang (yepmanwong@hkgai.org) and Prof Wei Xue (weixue@ust.hk) for the support and suggestion for this article, and to Andy Guo (guozhenhua@hkgai.org) for user side tests, Yu Jiepu (yujiepu@hkgai.org) for deployment to verify effectiveness of MTP and P3x3D4, and to Yi Chao (chao.yi@hkgai.org) for help of arrangement of resources.
+Thanks to Mr Yiwen Wang (yepmanwong@hkgai.org) and Prof Wei Xue (weixue@ust.hk) for the support and suggestion for this article, and to Andy Guo (guozhenhua@hkgai.org) for user side tests, Yu Jiepu (yujiepu@hkgai.org) for the deployment to verify effectiveness of MTP and P3x3D4, and to Yi Chao (chao.yi@hkgai.org) for help of arrangement of resources.
 
 ## Appendix
 
