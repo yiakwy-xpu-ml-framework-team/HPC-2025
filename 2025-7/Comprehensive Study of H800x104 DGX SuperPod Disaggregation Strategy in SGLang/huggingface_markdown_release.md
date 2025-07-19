@@ -1,3 +1,5 @@
+# Comprehensive Study of H800x104 DGX SuperPod Disaggregation Strategy in SGLang v0.4.8
+
 <style>
 caption {
   caption-side: top;
@@ -7,14 +9,14 @@ caption {
 }
 </style>
 
-> We evaluated the maximum prefill and decode goodput (throughput under SLO, i.e., TTFT < 2s, ITL < 50ms) [^6] in a disaggregated LLM inference architecture using 13x8 H800 DGX SuperPod nodes. The system achieved approximately 1.3 million tokens per second (toks/sec) for input throughput and 20,000 toks/sec for max output throughput across various server-side disaggregation configurations (P3x3D4, P4D9, P4D6, P2D4, P4D2, P2D2). In the major cases, prefill is the bottlenect in our experiment, bringing us with large TTFT. Reference to the computed Prefill/Decodes nodes ratio `1.4` derived from DeepSeek workload [^9], to achieve high server side goodput rates, we tried larger `P` nodes group (`3`) and smaller tp size (`48`). Performance was measured using the SGLang `bench_one_batch_server.py` benchmark [^1], which evaluates URL API call performance and later `genai-bench` [^10] to generate more reliable output throughput at different level of concurrencies. On the user side, we conducted online observations under service level objectives (SLOs), using evalscope [^2] to benchmark OpenAI-compatible endpoint APIs with API key authentication. Under these conditions, the system sustained 25,000 toks/sec output throughput at a concurrency of 50, and 55,000 toks/sec at a concurrency of 150 for small input queries. We observed that when `batch size × input length` exceeds a certain threshold (e.g., due to KV cache transfer limitations [^7]), Time to First Token (TTFT) increases sharply. Morever, to obtain better goodput rate, input seqeunce length (ISL) over output sequence length (OSL) should be at specific ratio, preferablely 4:1. As a result, overall latency dominated by TTFT if we want to achieve high thoughput with larger batch sizes and sequence length. To maintain high GPU utilization and goodput, concurrencies should be less than 128 to avoid sharp growth of TTFT. This balance is particularly effective on `H800` DGX SuperPod systems. Excessively high TTFT leads to unstable output throughput and a significant decline in server-side goodput.
+> We evaluated the maximum prefill and decode goodput (throughput under SLO, i.e., TTFT < 2s, ITL < 50ms) [6] in a disaggregated LLM inference architecture using 13x8 H800 DGX SuperPod nodes. The system achieved approximately 1.3 million tokens per second (toks/sec) for input throughput and 20,000 toks/sec for max output throughput across various server-side disaggregation configurations (P3x3D4, P4D9, P4D6, P2D4, P4D2, P2D2). In the major cases, prefill is the bottlenect in our experiment, bringing us with large TTFT. Reference to the computed Prefill/Decodes nodes ratio `1.4` derived from DeepSeek workload [9], to achieve high server side goodput rates, we tried larger `P` nodes group (`3`) and smaller tp size (`48`). Performance was measured using the SGLang `bench_one_batch_server.py` benchmark [1], which evaluates URL API call performance and later `genai-bench` [10] to generate more reliable output throughput at different level of concurrencies. On the user side, we conducted online observations under service level objectives (SLOs), using evalscope [2] to benchmark OpenAI-compatible endpoint APIs with API key authentication. Under these conditions, the system sustained 25,000 toks/sec output throughput at a concurrency of 50, and 55,000 toks/sec at a concurrency of 150 for small input queries. We observed that when `batch size × input length` exceeds a certain threshold (e.g., due to KV cache transfer limitations [7]), Time to First Token (TTFT) increases sharply. Morever, to obtain better goodput rate, input seqeunce length (ISL) over output sequence length (OSL) should be at specific ratio, preferablely 4:1. As a result, overall latency dominated by TTFT if we want to achieve high thoughput with larger batch sizes and sequence length. To maintain high GPU utilization and goodput, concurrencies should be less than 128 to avoid sharp growth of TTFT. This balance is particularly effective on `H800` DGX SuperPod systems. Excessively high TTFT leads to unstable output throughput and a significant decline in server-side goodput.
 
 
 Authors : [LEI WANG](https://github.com/yiakwy-xpu-ml-framework-team) (yiakwang@ust.hk), Yujie Pu (yujiepu@ust.hk), Andy Guo (guozhenhua@hkgai.org), Yi Chao (chao.yi@hkgai.org), Yiwen Wang (yepmanwong@hkgai.org), Xue Wei (weixue@ust.hk)
 
 ## Motivation & Background
 
-In Prefill-Decode aggregated LLM inference architecture, an interleveating schedule plan between prefill tokens and decodes tokens was implemented in vLLM bofore [2024 Q2](https://github.com/vllm-project/vllm/issues/3861), and later improved with continuous scheduling [^3] with higher overall GPU utimizaton.
+In Prefill-Decode aggregated LLM inference architecture, an interleveating schedule plan between prefill tokens and decodes tokens was implemented in vLLM bofore [2024 Q2](https://github.com/vllm-project/vllm/issues/3861), and later improved with continuous scheduling [3] with higher overall GPU utimizaton.
 
 <br />
 
@@ -22,13 +24,13 @@ However due to distinct computing natures of prefill and decode stages, continou
 
 <br />
 
-To address this issue, chunk-prefill feature [^4] was proposed and introduced in [PR#3130](https://github.com/vllm-project/vllm/issues/3130) so that chunked prefill tokens of incoming requests and decode tokens of runing requests are batched together in a colocated system as demonstrated below for better ITL and GPU utilization:
+To address this issue, chunk-prefill feature [4] was proposed and introduced in [PR#3130](https://github.com/vllm-project/vllm/issues/3130) so that chunked prefill tokens of incoming requests and decode tokens of runing requests are batched together in a colocated system as demonstrated below for better ITL and GPU utilization:
 
 <br />
 
 <figure>
 <p align="center">
-<img src="assets/img/prefill-decode-schedule.drawio.png" alt="chunked-prefill schedule in aggregated serving architecture" style="width:120%">
+<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-7/Comprehensive%20Study%20of%20H800x104%20DGX%20SuperPod%20Disaggregation%20Strategy%20in%20SGLang/assets/img/prefill-decode-schedule.drawio.png" alt="chunked-prefill schedule in aggregated serving architecture" style="width:120%">
 </p>
 <figcaption style="text-align:center">chunked-prefill schedule in aggregated serving architecture</figcaption>
 </figure>
@@ -43,16 +45,16 @@ The process of decoding is often captured by a cuda graph for multiple rounds of
 
 <br />
 
-Moreover, as observed in DistServe [^4] [^5] [^6] on `13 B` dense model and our experiments on `671 B` MoE model, prefill computation cost increases significantly once `batch_size x output_length` exceeds a certain threshold (i.e. `128 x 128`) in a colocated serving system, regardless of chunk-fill size.
+Moreover, as observed in DistServe [4] [5] [6] on `13 B` dense model and our experiments on `671 B` MoE model, prefill computation cost increases significantly once `batch_size x output_length` exceeds a certain threshold (i.e. `128 x 128`) in a colocated serving system, regardless of chunk-fill size.
 
 
 <br />
 
-Hereby disaggregated serving architecture was proposed [^4]. DeepSeek further reduces latencies, and throughput by DeepEP and MLA, which were quickly integrated into SGLang, and achieves epic 73.7k toks/node/sec and 14.8k toks/node/sec under SLO at the deployment unit `P4D18`.
+Hereby disaggregated serving architecture was proposed [4]. DeepSeek further reduces latencies, and throughput by DeepEP and MLA, which were quickly integrated into SGLang, and achieves epic 73.7k toks/node/sec and 14.8k toks/node/sec under SLO at the deployment unit `P4D18`.
 
 <br />
 
-However, there is a common misunderstanding that the number of P should be larger than the number D since DeepSeek does not disclose the real raio of P nodes over D in this its blog. [^8].
+However, there is a common misunderstanding that the number of P should be larger than the number D since DeepSeek does not disclose the real raio of P nodes over D in this its blog. [8].
 
 <br />
 
@@ -385,7 +387,7 @@ Given an input sequence length (in_seq_len : 128 ~ 4096) and short output sequen
 
 <br />
 
-Unlike serving `13 B` dense model in DistServe [^4] [^5] [^6] , prefill goodput in serving `671 B` large MoE (8 out of 256 experts, plus `P * 8` redundant experts), is negatively affected by the output length and batch sizes once its max is achieved. The details of statistics can be found in Appendix.
+Unlike serving `13 B` dense model in DistServe [4] [5] [6] , prefill goodput in serving `671 B` large MoE (8 out of 256 experts, plus `P * 8` redundant experts), is negatively affected by the output length and batch sizes once its max is achieved. The details of statistics can be found in Appendix.
 
 <br />
 
@@ -397,7 +399,7 @@ In a `H800 x 2 (DGX SuperPod)` test config, each node is connected via infiniban
 
 <figure>
 <p align="center">
-<img src="assets/img/aggregated_input_tput.png" alt="aggregated input throughput achieve max at specific batch_size x otuput_length" style="width:50%">
+<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-7/Comprehensive%20Study%20of%20H800x104%20DGX%20SuperPod%20Disaggregation%20Strategy%20in%20SGLang/assets/img/aggregated_input_tput.png" alt="aggregated input throughput achieve max at specific batch_size x otuput_length" style="width:50%">
 </p>
 <figcaption style="text-align:center">aggregated input throughput achieve max at specific batch_size x otuput_length</figcaption>
 </figure>
@@ -410,7 +412,7 @@ When `batch size x output length` exceeds `128x128`, we observed  significant dr
 
 <figure>
 <p align="center">
-<img src="assets/img/tput-ttft.png" alt="input throughput and ttft" style="width:50%">
+<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-7/Comprehensive%20Study%20of%20H800x104%20DGX%20SuperPod%20Disaggregation%20Strategy%20in%20SGLang/assets/img/tput-ttft.png" alt="input throughput and ttft" style="width:50%">
 </p>
 <figcaption style="text-align:center">input throughput and ttft</figcaption>
 </figure>
@@ -421,7 +423,7 @@ All of these statistics indicate that achieving maximum of prefill and decode th
 
 <br />
 
-Intuitively, in a disaggregated serving architecture, goodput of prefill nodes with suitable chunk-prefill size, TP sizes, is bounded with certain batch size, since KV cache transfer speed is limited [^7].
+Intuitively, in a disaggregated serving architecture, goodput of prefill nodes with suitable chunk-prefill size, TP sizes, is bounded with certain batch size, since KV cache transfer speed is limited [7].
 
 #### How P/D works in SGLang
 
@@ -498,13 +500,13 @@ Prefill server always return frist to complete KV cache generation:
 
 <br />
 
-Refering to Dynamo workflow [^11], we draft a simple workflow for SGLang RustLB based P/D architecture to better understand how we can optimize the workflow later :
+Refering to Dynamo workflow [11], we draft a simple workflow for SGLang RustLB based P/D architecture to better understand how we can optimize the workflow later :
 
 <br />
 
 <figure>
 <p align="center">
-<img src="assets/img/SGLangPDWorkFlow.drawio.png" alt="SGLang v4.8.0 P/D workflow" style="width:50%">
+<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-7/Comprehensive%20Study%20of%20H800x104%20DGX%20SuperPod%20Disaggregation%20Strategy%20in%20SGLang/assets/img/SGLangPDWorkFlow.drawio.png" alt="SGLang v4.8.0 P/D workflow" style="width:50%">
 </p>
 <figcaption style="text-align:center">aggregated input throughput achieve max at specific batch_size x otuput_length</figcaption>
 </figure>
@@ -519,7 +521,7 @@ Investigating over all feasible disaggregation configs with 13 x H800 DGX Supper
 
 <br />
 
-To prepare for the test, we first align our hardware and software with the latest open source community, and followed instructions from SGLang team [^1] to prepare the configuration files :
+To prepare for the test, we first align our hardware and software with the latest open source community, and followed instructions from SGLang team [1] to prepare the configuration files :
 
 <br />
 
@@ -542,7 +544,7 @@ The hardware of H800 SuperPod used in this experiment organized in racks :
 
 <figure>
 <p align="center">
-<img src="assets/img/H800_SuperPod.drawio.png" alt="" style="width:50%">
+<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-7/Comprehensive%20Study%20of%20H800x104%20DGX%20SuperPod%20Disaggregation%20Strategy%20in%20SGLang/assets/img/H800_SuperPod.drawio.png" alt="" style="width:50%">
 </p>
 <figcaption style="text-align:center">H800 SuperPod Sketch</figcaption>
 </figure>
@@ -633,7 +635,7 @@ Successufl tuning should expect to see this:
 
 <figure>
 <p align="center">
-<img src="assets/img/deepep_test_snapshot.png" alt="deepep test snapshot" style="width:50%">
+<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-7/Comprehensive%20Study%20of%20H800x104%20DGX%20SuperPod%20Disaggregation%20Strategy%20in%20SGLang/assets/img/deepep_test_snapshot.png" alt="deepep test snapshot" style="width:50%">
 </p>
 <figcaption style="text-align:center">deepep test snapshot</figcaption>
 </figure>
@@ -957,7 +959,7 @@ In our initial attempt (thanks to Yujie Pu), MTP decoding (with deepseek draft m
 
 <figure>
 <p align="center">
-<img src="assets/img/p4d9-MTP.png" alt="" style="width:50%">
+<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-7/Comprehensive%20Study%20of%20H800x104%20DGX%20SuperPod%20Disaggregation%20Strategy%20in%20SGLang/assets/img/p4d9-MTP.png" alt="" style="width:50%">
 </p>
 <figcaption style="text-align:center">p4d9-MTP</figcaption>
 </figure>
@@ -1018,7 +1020,7 @@ Notablly, when input sequence length over output length has the raio of 4:1, in 
 
 <figure>
 <p align="center">
-<img src="assets/img/P2D2.png" alt="" style="width:80%">
+<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-7/Comprehensive%20Study%20of%20H800x104%20DGX%20SuperPod%20Disaggregation%20Strategy%20in%20SGLang/assets/img/P2D2.png" alt="" style="width:80%">
 </p>
 <figcaption style="text-align:center">P2D2 stat (ctx_p=4096, ctx_d=2048)</figcaption>
 </figure>
@@ -1101,7 +1103,7 @@ Data parallel and dp attention (DP > 1) must be turned on, otherwise, we shall s
 
 <figure>
 <p align="center">
-<img src="assets/img/P4D2P2D4.png" alt="" style="width:80%">
+<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-7/Comprehensive%20Study%20of%20H800x104%20DGX%20SuperPod%20Disaggregation%20Strategy%20in%20SGLang/assets/img/P4D2P2D4.png" alt="" style="width:80%">
 </p>
 <figcaption style="text-align:center">P4D2 vs P2D4 (ctx_p=4096, ctx_d=2048)</figcaption>
 </figure>
@@ -1124,7 +1126,7 @@ The current config does not allow 3 Prefill nodes config, hence we proceed to ex
 
 <figure>
 <p align="center">
-<img src="assets/img/P4D6.png" alt="" style="width:80%">
+<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-7/Comprehensive%20Study%20of%20H800x104%20DGX%20SuperPod%20Disaggregation%20Strategy%20in%20SGLang/assets/img/P4D6.png" alt="" style="width:80%">
 </p>
 <figcaption style="text-align:center">P4D6 (ctx_p=8192, ctx_d=6144)</figcaption>
 </figure>
@@ -1135,13 +1137,13 @@ For P4D6 disaggregation test, average TTFT is raised up to 10s, and when **batch
 
 #### P4D9
 
-P4D9 is gold configuration recommended by SGLang team [^8], however in our test, it does not generate acceptable goodput rate and its overall throughput is limited to 80 k toks / sec at 4 K input, 256 output length :
+P4D9 is gold configuration recommended by SGLang team [8], however in our test, it does not generate acceptable goodput rate and its overall throughput is limited to 80 k toks / sec at 4 K input, 256 output length :
 
 <br />
 
 <figure>
 <p align="center">
-<img src="assets/img/P4D9.png" alt="" style="width:80%">
+<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-7/Comprehensive%20Study%20of%20H800x104%20DGX%20SuperPod%20Disaggregation%20Strategy%20in%20SGLang/assets/img/P4D9.png" alt="" style="width:80%">
 </p>
 <figcaption style="text-align:center">P4D9 (ctx_p=8192, ctx_d=4096)</figcaption>
 </figure>
@@ -1155,7 +1157,7 @@ We verified this in online test for P4D9 disaggregation config in user side. For
 
 <figure>
 <p align="center">
-<img src="assets/img/short_query.jpg" alt="" style="width:80%">
+<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-7/Comprehensive%20Study%20of%20H800x104%20DGX%20SuperPod%20Disaggregation%20Strategy%20in%20SGLang/assets/img/short_query.jpg" alt="" style="width:80%">
 </p>
 <figcaption style="text-align:center">Short Query User Observation</figcaption>
 </figure>
@@ -1168,7 +1170,7 @@ When it comes to long query, only maximum 400 toks / sec observed in user side (
 
 <figure>
 <p align="center">
-<img src="assets/img/long_query.jpg" alt="" style="width:80%">
+<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-7/Comprehensive%20Study%20of%20H800x104%20DGX%20SuperPod%20Disaggregation%20Strategy%20in%20SGLang/assets/img/long_query.jpg" alt="" style="width:80%">
 </p>
 <figcaption style="text-align:center">Long Query User Observation</figcaption>
 </figure>
@@ -1402,24 +1404,27 @@ Thanks to Mr Yiwen Wang (yepmanwong@hkgai.org) and Prof Wei Xue (weixue@ust.hk) 
 
 ## Reference
 
-[^1]: Instruction for Running DeepSeek with Large-scale PD and EP, https://github.com/sgl-project/sglang/issues/6017, retrieved on 12 July 2025.
+[1]: Instruction for Running DeepSeek with Large-scale PD and EP, https://github.com/sgl-project/sglang/issues/6017, retrieved on 12 July 2025.
 
-[^2]: Evaluation Framework for Large Models, ModelScope team, 2024, https://github.com/modelscope/evalscope, retrieved on 12 July 2025.
+[2]: Evaluation Framework for Large Models, ModelScope team, 2024, https://github.com/modelscope/evalscope, retrieved on 12 July 2025.
 
-[^3]: Orca : A Distributed Serving System for transformer-Based Generative Models, https://www.usenix.org/conference/osdi22/presentation/yu, Gyeong-In Yu and Joo Seong Jeong and Geon-Woo Kim and Soojeong Kim and Byung-Gon Chun, OSDI 2022, https://www.usenix.org/conference/osdi22/presentation/yu
+[3]: Orca : A Distributed Serving System for transformer-Based Generative Models, https://www.usenix.org/conference/osdi22/presentation/yu, Gyeong-In Yu and Joo Seong Jeong and Geon-Woo Kim and Soojeong Kim and Byung-Gon Chun, OSDI 2022, https://www.usenix.org/conference/osdi22/presentation/yu
 
-[^4]: SARATHI : efficient LLM inference by piggybacking decodes with chunked prefills, https://arxiv.org/pdf/2308.16369
+[4]: SARATHI : efficient LLM inference by piggybacking decodes with chunked prefills, https://arxiv.org/pdf/2308.16369
 
-[^5]: DistServe : Disaggregating Prefill and Decoding for Goodput-optimized large language model serving, Yinmin Zhong, Shengyu Liu, Junda Chen, Jianbo Hu, Yibo Zhu, Xuanzhe Liu, Xin Jin, Hao Zhang, 6 Jun 2024, https://arxiv.org/pdf/2401.09670
+[5]: DistServe : Disaggregating Prefill and Decoding for Goodput-optimized large language model serving, Yinmin Zhong, Shengyu Liu, Junda Chen, Jianbo Hu, Yibo Zhu, Xuanzhe Liu, Xin Jin, Hao Zhang, 6 Jun 2024, https://arxiv.org/pdf/2401.09670
 
-[^6]: Throughput is Not All You Need : Maximizing Goodput in LLM Serving using Prefill-decode Disaggregation, Junda Chen, Yinmin Zhong, Shengyu Liu, Yibo Zhu, Xin Jin, Hao Zhang, 3 March 2024, accessed online on 12 July 2025.
+[6]: Throughput is Not All You Need : Maximizing Goodput in LLM Serving using Prefill-decode Disaggregation, Junda Chen, Yinmin Zhong, Shengyu Liu, Yibo Zhu, Xin Jin, Hao Zhang, 3 March 2024, accessed online on 12 July 2025.
 
-[^7]: MoonCake transfer engine performance : https://kvcache-ai.github.io/Mooncake/performance/sglang-benchmark-results-v1.html, accessed online 18 july 2025
+[7]: MoonCake transfer engine performance : https://kvcache-ai.github.io/Mooncake/performance/sglang-benchmark-results-v1.html, accessed online 18 july 2025
 
-[^8]: https://lmsys.org/blog/2025-05-05-large-scale-ep/, accessed online on 12 July 2025
+[8]: https://lmsys.org/blog/2025-05-05-large-scale-ep/, accessed online on 12 July 2025
 
-[^9]: DeepSeek OpenWeek : https://github.com/deepseek-ai/open-infra-index?tab=readme-ov-file
+[9]: DeepSeek OpenWeek : https://github.com/deepseek-ai/open-infra-index?tab=readme-ov-file
 
-[^10]: SGLang genai-bench : https://github.com/sgl-project/genai-bench, accessed online on 18 July
+[10]: SGLang genai-bench : https://github.com/sgl-project/genai-bench, accessed online on 18 July
 
-[^11]: https://github.com/ai-dynamo/dynamo/blob/main/docs/images/dynamo_flow.png, accessed online on 18 July
+[11]: https://github.com/ai-dynamo/dynamo/blob/main/docs/images/dynamo_flow.png, accessed online on 18 July
+
+## Sponsor Sources
+Also see [Github](https://github.com/yiakwy-xpu-ml-framework-team/HPC-2025/blob/main/2025-7/Comprehensive%20Study%20of%20H800x104%20DGX%20SuperPod%20Disaggregation%20Strategy%20in%20SGLang/Comprehensive%20Study%20of%20H800x104%20DGX%20SuperPod%20Disaggregation%20Strategy%20in%20SGLang%20v0.4.8.md)
