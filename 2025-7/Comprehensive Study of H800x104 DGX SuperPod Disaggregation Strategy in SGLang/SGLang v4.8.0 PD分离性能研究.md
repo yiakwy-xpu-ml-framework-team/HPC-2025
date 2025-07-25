@@ -7,47 +7,23 @@ caption {
 }
 </style>
 
-> We evaluated the maximum prefill and decode goodput (throughput under SLOs, i.e., TTFT < 2s, ITL < 50ms) [^6] in a disaggregated LLM inference architecture using 13x8 H800 DGX SuperPod nodes. The system achieved approximately 1.3 million tokens per second (toks/sec) for input throughput and 20,000 toks/sec for max output throughput across various server-side disaggregation configurations ((P3x3)D4, P4D9, P4D6, P2D4, P4D2, P2D2). In the major cases, prefill is the bottlenect in our experiment, bringing us with large TTFT. Reference to the computed Decodes/Prefill nodes ratio `1.4` derived from DeepSeek workload [^9], to achieve high server side goodput rates, we tried larger `P` nodes group (`3`) and smaller tp size (`24`). Performance was measured using the SGLang `bench_one_batch_server.py` benchmark [^1], which evaluates URL API call performance and later `genai-bench` [^10] to generate more reliable output throughput at different level of concurrencies. On the user side, we conducted online observations under service level objectives (SLOs), using evalscope [^2] to benchmark OpenAI-compatible endpoint APIs with API key authentication. Under these conditions, the system sustained 25,000 toks/sec output throughput at a concurrency of 50, and 55,000 toks/sec at a concurrency of 150 for small input queries. We observed that when `batch size × input length` exceeds a certain threshold (e.g., due to KV cache transfer limitations [^7]), Time to First Token (TTFT) increases sharply. Morever, to obtain better goodput rate, input seqeunce length (ISL) over output sequence length (OSL) should be at specific ratio, preferablely 4:1. As a result, overall latency dominated by TTFT if we want to achieve high thoughput with larger batch sizes and sequence length. To maintain high GPU utilization and goodput, concurrencies should be less than 128 to avoid sharp growth of TTFT. This balance is particularly effective on `H800` DGX SuperPod systems. Excessively high TTFT leads to unstable output throughput and a significant decline in server-side goodput.
+> 我们在一个采用 13×8 H800 DGX SuperPod 节点的解耦(分离)式大语言模型（LLM）推理架构中，评估了在服务等级目标（SLOs）约束下（即 TTFT < 2s，ITL < 50ms）的最大 prefill 与 decode 吞吐率（goodput）[^6]。系统在多种服务器端解耦配置下（如 (P3x3)D4、P4D9、P4D6、P2D4、P4D2、P2D2），达到了约 130 万 tokens/秒 的输入吞吐率和 2 万 tokens/秒 的最大输出吞吐率。在多数情况下，prefill 阶段构成性能瓶颈，导致较高的 TTFT。参考 DeepSeek 工作负载推导出的解码节点与 prefill 节点的比例（1.4）[^9]，为提升服务器端 goodput，我们尝试了更大的 prefill 节点组（如 P=3）和更小的张量并行（TP）规模（TP=24）。性能评估使用了 SGLang 的 bench_one_batch_server.py 基准脚本 [^1] 来测试 URL API 接口的响应能力，并在后续使用 genai-bench [^10] 对不同并发度下的输出吞吐进行了更可靠的测量。在客户端，我们通过 evalscope [^2] 对 OpenAI 接口兼容的 API（通过 API key 验证）进行了在线观测与评估。在小输入请求场景下，系统在并发度为 50 时可维持 2.5 万 toks/sec 的输出吞吐，在并发度为 150 时可达到 5.5 万 toks/sec。我们观察到，当 batch size × 输入长度 超过某个阈值（如因 KV 缓存传输限制所致）[^7]，TTFT 会急剧上升。此外，为获得更高的 goodput，建议保持 输入序列长度（ISL）与输出序列长度（OSL）为特定比例，最佳为 4:1。因此，当 batch size 和序列长度增大以实现高吞吐时，总延迟往往由 TTFT 主导。为了保持高 GPU 利用率与 goodput，建议将并发度控制在 128 以下，以避免 TTFT 急剧上升。这种平衡策略在 H800 DGX SuperPod 系统上尤为有效。过高的 TTFT 会导致输出吞吐不稳定，并显著降低服务器端的 goodput 表现。
 
 
-Authors : [LEI WANG](https://github.com/yiakwy-xpu-ml-framework-team) (yiakwang@ust.hk), Yujie Pu (yujiepu@ust.hk), Andy Guo (guozhenhua@hkgai.org), Yi Chao (chao.yi@hkgai.org), Yiwen Wang (yepmanwong@hkgai.org), Xue Wei (weixue@ust.hk)
+作者 : [LEI WANG](https://github.com/yiakwy-xpu-ml-framework-team) (yiakwang@ust.hk), Yujie Pu (yujiepu@ust.hk), Andy Guo (guozhenhua@hkgai.org), Yi Chao (chao.yi@hkgai.org), Yiwen Wang (yepmanwong@hkgai.org), Xue Wei (weixue@ust.hk)
 
-## Contents
-
-- [Motivation & Background](#motivation--background)
-  + [Review `H800 x 2` test of Prefill Decode Colocated Architecture](#review-h800-x-2-test-of-prefill-decode-colocated-architecture)
-  + [How P/D works in SGLang](#how-pd-works-in-sglang)
-- [Benchmarking Method](#benchmarking-method)
-  + [Hardware & Software](#hardware--software)
-  + [Common Basic Config](#common-basic-config)
-  + [Envrionmental Variables](#envrionmental-variables)
-  + [Tunning parameters.](#tunning-parameters)
-  + [Additional Options](#additional-options)
-    * [MTP](#mtp)
-- [Benchmarking of P/D](#benchmarking-of-pd)
-  + [P2D2](#p2d2)
-  + [P2D4/P4D2](#p2d4p4d2)
-  + [P4D6](#p4d6)
-  + [P4D9](#p4d9)
-- [Conclusion](#conclusion)
-- [Future Work](#future-work)
-- [Acknowledgement](#acknowledgement)
-- [Appendix](#appendix)
-  + [Prefill decode nodes Colocated H800 X 2 test full reference](#prefill-decode-nodes-colocated-h800-x-2-test-full-reference)
-- [Reference](#reference)
-- [Sponsor Sources](#sponsor-sources)
 
 ## Motivation & Background
 
-In Prefill-Decode aggregated LLM inference architecture, an interleveating schedule plan between prefill tokens and decodes tokens was implemented in vLLM bofore [2024 Q2](https://github.com/vllm-project/vllm/issues/3861), and later improved with continuous scheduling [^3] with higher overall GPU utimizaton.
+在 Prefill-Decode 聚合的大模型推理架构中，vLLM 在 [2024 年第二季度](https://github.com/vllm-project/vllm/issues/3861) 之前实现了一种将 prefill token 和 decode token 交错调度方案，随后通过连续调度（continuous scheduling）机制进行了改进，从而提升了整体 GPU 利用率 [^3]。
 
 <br />
 
-However due to distinct computing natures of prefill and decode stages, continous batching of full un-chunked prefill tokens of incoming requests with decode tokens of running requests increase decode latency significantly. This leads to large inter token latency (ITL) and degrades responsiveness.
+然而，由于 prefill 阶段和 decode 阶段在计算特性上的显著差异，将未切块的完整 prefill token（来自新请求）与正在运行请求的 decode token 一起持续批处理，会显著增加 decode 延迟。这会导致较大的 Token 间延迟（ITL），进而降低系统的响应性。
 
 <br />
 
-To address this issue, chunk-prefill feature [^4] was proposed and introduced in [PR#3130](https://github.com/vllm-project/vllm/issues/3130) so that chunked prefill tokens of incoming requests and decode tokens of runing requests are batched together in a colocated system as demonstrated below for better ITL and GPU utilization:
+为了解决这个问题，[PR#3130](https://github.com/vllm-project/vllm/issues/3130) 中引入了 chunk-prefill 功能 [^4]，使得新请求的 prefill token 在被切块后，能与正在运行请求的 decode token 一同批处理。该功能在同构部署系统中如图所示，有助于改善 ITL 并提升 GPU 利用率：
 
 <br />
 
@@ -55,45 +31,69 @@ To address this issue, chunk-prefill feature [^4] was proposed and introduced in
 <p align="center">
 <img src="assets/img/prefill-decode-schedule.drawio.png" alt="chunked-prefill schedule in aggregated serving architecture" style="width:120%">
 </p>
-<figcaption style="text-align:center">chunked-prefill schedule in aggregated serving architecture</figcaption>
+<figcaption style="text-align:center">耦合推理架构中的 chunked-prefill 调度 </figcaption>
 </figure>
 
 <br />
 
-However chunked-prefill does not take into account distinct computing natures of prefilling and decodeing.
+然而，chunked-prefill 并未真正考虑到 prefill 和 decode 两个阶段在计算特性上的本质差异。
 
 <br />
 
-The process of decoding is often captured by a cuda graph for multiple rounds of generation, hence additional overhead brought in when decoding is batched with chunked prefill where cuda graph is not viable for use.
+解码过程通常通过 CUDA Graph 来捕捉多轮生成计算，以此提升效率。因此当解码任务与 chunked prefill 一同批处理时，CUDA Graph 便无法使用，反而会引入额外开销。
 
 <br />
 
-Moreover, as observed in DistServe [^4] [^5] [^6] on `13 B` dense model and our experiments on `671 B` MoE model, prefill computation cost increases significantly once `batch_size x output_length` exceeds a certain threshold (i.e. `128 x 128`) in a colocated serving system, regardless of chunk-fill size.
+此外，正如 
+
+DistServe [^4][^5][^6] 在 13B 稠密模型上的观察结果，以及我们在 671B MoE 模型实验中的验证，在 colocated 服务系统中，一旦 `batch_size × output_length` 超过某个阈值（如 128(bs) × 128(OSL)），prefill 的计算成本将显著上升，与 chunked prefill 的切分大小无关。
 
 
 <br />
 
-Hereby disaggregated serving architecture was proposed [^4]. DeepSeek further reduces latencies, and imporove throughput by DeepEP and MLA, which were quickly integrated into SGLang, and achieves epic 73.7k toks/node/sec and 14.8k toks/node/sec under SLOs at the deployment unit `P4D18`.
+因此，文献 [4] 中提出了解耦部署架构（disaggregated serving architecture）。DeepSeek 在此基础上进一步通过 DeepEP 和 MLA 技术降低延迟、提升吞吐，并迅速集成至 SGLang 中。在 P4D18 这种部署单元上，系统在满足 SLOs 的前提下达到了惊人的 73.7k toks/node/sec（输入）和 14.8k toks/node/sec（输出）。
 
 <br />
 
-However, a common misunderstanding is that the number of P nodes should not exceed that of D nodes, as DeepSeek does not disclose the actual ratio of P to D nodes in its blog post [^8].
+然而，很多人误解认为 `P` 节点数量不应超过 `D` 节点数量，而实际上 DeepSeek 在其博客中并未公开 `P` 与 `D` 节点的真实比例 [^8]
 
 <br />
 
-According to its revealed total served tokens `608B input tokens`, and `168B output tokens` within 24 hours a day, and the Prefill/Decode speeds, the total number of prefill nodes used is estimated to be
+根据其公布的数据 —— 每日服务总量为 608B 输入 token 和 168B 输出 token，结合其 prefill/decode 的 token 处理速度，可估算其总共使用的 prefill 节点数为：
 
 $$955 = 608 * 1e^{10} / (24 * 3600 * 73.7 * 1e^3)$$
 
-, and total number of decode nodes is estimated to be
+总的 decode 节点数量为：
 
 $$1314 = 168 * 1e^{10} / (24 * 3600 * 14.8 * 1e^3)$$
 
-The reference test ratio of Decode/Prefill nodes is computed as `1.4`, and the P4D18 configuration ratio is `3.27 : 1`. For H800 `13x8 DGX SuperPod`, P/D disaggregation configuation `(P3x2)D4`, `(P3x3)D4` and `(P4x2)D4` are hence recommended. Since Prefill is more likely to be the bottlenect of the system as we analyze, we limited the TP size to 4, becuase larger TP size degregrads inference speed and less TP size leads to less volume reserved for KV cache.
+The reference test ratio of Decode/Prefill nodes is computed as `1.4`, and the P4D18 configuration ratio is `3.27 : 1`. For H800 `13x8 DGX SuperPod`, P/D disaggregation configuation `P3x2D4`, `(P3x3)D4` and `P4x2D3` are hence recommended. Since Prefill is more likely to be the bottlenect of the system as we analyze, we limited the TP size to 4, becuase larger TP size degregrads inference speed and less TP size leads to less volume reserved for KV cache.
+
+据此计算的 
+
+Decode/Prefill 节点比例约为 `1.4:1`，而 P4D18 的配置比例则为 `3.27:1`。
 
 <br />
 
-In our test, `(P3x3)D4` and `P4D6` outperforms P9D4 with better TTFT due to less TP size, and relative more prefill stage processing capacities:
+因此，在 H800 13x8 DGX SuperPod 上推荐使用如下 P/D 解耦配置：
+
+```
+1. (P3x2)D4
+
+2. (P3x3)D4
+
+3. (P4x2)D4
+
+4. P4D6
+```
+
+<br />
+
+由于我们分析得出 prefill 更可能成为系统瓶颈，因此我们将 TP 大小限制为 4，因为更大的 TP 大小会降低推理速度，而更小的 TP 则可能导致 KV cache 预留空间不足。
+
+<br />
+
+在我们的测试中，(P3x3)D4 和 P4D6 配置在 TTFT 上明显优于 P9D4，主要因为其采用更小的 TP 设置，同时 prefill 计算能力更强:
 
 <br />
 
@@ -396,40 +396,42 @@ In our test, `(P3x3)D4` and `P4D6` outperforms P9D4 with better TTFT due to less
 
 <br />
 
-We conducted both aggregated and disaggregated serving experiments at scales with our own finetuned DeepSeek V3 (0324) alike model in SGLang v0.4.8.
+我们在 SGLang v0.4.8 中，使用我们自己微调的类 DeepSeek V3（0324）模型，进行了聚合式和解耦式推理部署的实验，并在较大规模下验证了效果。
 
 <br />
 
-Given an input sequence length (in_seq_len : 128 ~ 4096) and short output sequence length (out_seq_len : 1~256), tuning over various batch sizes (bs), we concluded that
+给定输入序列长度（in_seq_len: 128 ~ 4096）和较短的输出序列长度（out_seq_len: 1 ~ 256），通过对不同 batch size（bs） 的调优，我们得出以下结论：
 
 <br />
 
-- maximum of prefill goodput, when seving DeepSeek V3 alike massive MoE model, arrives at specific `batch size (bs) x output length (out_seq_len)` in an aggregated LLM inference architecture, and at specific `batch size (bs) * input length (in_seq_len)` in a disaggregated LLM inference architecture;
+- 在 聚合式（aggregated）LLM 推理架构 中，Prefill goodput 的最大值 通常出现在某个特定的 batch_size (bs) × output_length (out_seq_len)；
 
-- prefill is more likely to be the bottlenect, hence more prefill nodes (1:1) are preferred;
+- 在 解耦式（disaggregated）LLM 推理架构 中，Prefill goodput 的最大值 则出现在特定的 batch_size (bs) × input_length (in_seq_len)；
 
-<br />
-
-Unlike serving `13 B` dense model in DistServe [^4] [^5] [^6] , prefill goodput in serving `671 B` large MoE (8 out of 256 experts, plus `P * 8` redundant experts), is negatively affected by the the product of the output length and the batch size until its max is achieved. The details of statistics can be found in Appendix.
+- Prefill 更容易成为系统瓶颈，因此推荐使用更多的 prefill 节点, 根据下面测试数据可以使用更多的Prefill分组（(P3)x3），Prefill `WORLD_SIZE` 和 `Decode WORLD_SIZE` 比值在 0.75(P3D4) ～ 1.0 (PXDX) 之间；
 
 <br />
 
-#### Review `H800 x 2` test of Prefill Decode Colocated Architecture
+与在 DistServe [^4][^5][^6] 中部署 13B 稠密模型不同，部署 `671B` 大规模 MoE 模型（启用 `256` 个 expert 中的 8 个，并额外配置 `P * 8` 的冗余 experts）时，其 prefill goodput 会受到 `output_length × batch_size` 的乘积大小影响，并在达到最大值之前持续下降。详细的统计分析请见附录。
 
-In a `H800 x 2 (DGX SuperPod)` test config, each node is connected via infiniband, the max of input throughput arrives at 20 k toks/sec :
+<br />
+
+#### `H800 x 2` 测试：Prefill 与 Decode 的同机部署架构
+
+在 `H800 x 2 (DGX SuperPod)` 测试配置中，每个节点通过 InfiniBand 互联，输入吞吐量（input throughput）最大值约为 20k toks/sec：
 
 <br />
 
 <figure>
 <p align="center">
-<img src="assets/img/aggregated_input_tput.png" alt="input throughput achieve max at specific batch_size x output_length in the aggregated serving architecture" style="width:50%">
+<img src="assets/img/aggregated_input_tput.png" alt="aggregated input throughput achieve max at specific batch_size x output_length" style="width:50%">
 </p>
-<figcaption style="text-align:center">input throughput achieve max at specific `batch_size x otuput_length` in the aggregated serving architecture</figcaption>
+<figcaption style="text-align:center">同机部署架构下，最大输入吞吐在确定的 `batch_size x OSL` 达到 </figcaption>
 </figure>
 
 <br />
 
-When `batch size x output length` exceeds `128x128`, we observed significant drop in input throughput, accompanied with a sudden and steep growth of TTFT. In contrast, output throughput increase gradually with larger batch size, reaching its max.
+当批大小与输出长度的乘积超过 128(bs)×128(OSL) 时，我们观察到输入吞吐量显著下降，同时 TTFT（首次响应时间）突然且急剧上升。相比之下，输出吞吐量则随着批大小的增加逐渐上升，并最终达到峰值:
 
 <br />
 
@@ -449,15 +451,15 @@ When `batch size x output length` exceeds `128x128`, we observed significant dro
 
 <br />
 
-All of these statistics indicate that achieving maximum of prefill and decode throughput involves different workloads pattern.
+所有这些统计数据表明，要分别达到预填和解码的最大吞吐量，所需的工作负载模式是不同的。
 
 <br />
 
-Intuitively, in a disaggregated serving architecture, goodput of prefill nodes with suitable chunk-prefill size, TP sizes, is bounded with certain batch size, since KV cache transfer speed is limited [^7].
+直观来看，在一个解耦式（Disaggregated）部署架构中，Prefill节点的有效吞吐率（goodput）在设定合适的 chunk-prefill 大小与 TP（张量并行）规模后，会受限于某一批大小（batch size），因为 KV 缓存的传输速度存在瓶颈 [^7]。
 
-#### How P/D works in SGLang
+#### SGLang P/D 分离如何工作
 
-SGLang loader balancer service now supports multiple Prefill (P) nodes setup (multiple P nodes master addresses), and multiple Decode (D) nodes setup (multiple D nodes master addresses):
+SGLang 的 Loader Balancer 服务现在支持多预填节点（Prefill，简称 P）配置（支持多个 P 节点的 master 地址），以及多解码节点（Decode，简称 D）配置（支持多个 D 节点的 master 地址）：
 
 <br />
 
@@ -487,11 +489,11 @@ docker run --gpus all "${docker_args[@]}" python -m sglang.srt.disaggregation.mi
   --rust-lb
 ```
 
-One can also tune the TP size, as P nodes can have smaller TP sizes than D nodes to achieve better TTFT.
+用户还可以调整 TP（张量并行）规模，因为 P 节点可以设置比 D 节点更小的 TP 规模，以获得更优的 TTFT（首次 token 时间）。
 
 <br />
 
-Two load balancer `RustLB` and old `MiniLoadBalancer` are provided. They follow the same HTTP API to redirect HTTP requests to prefill and decode servers respectively:
+目前提供了两个负载均衡器：RustLB 和旧版 MiniLoadBalancer。它们遵循相同的 HTTP 接口，用于将 HTTP 请求分别重定向到 prefill 和 decode 服务器：
 
 ```
 # load balance API interface
@@ -502,7 +504,7 @@ INFO:     10.33.4.141:41328 - "POST /generate HTTP/1.1" 200 OK
 
 <br />
 
-They are also internally implemented in the same way to handle incoming requests:
+它们在内部的实现方式也相同，用于处理传入的请求：
 
 <br />
 
@@ -526,15 +528,15 @@ They are also internally implemented in the same way to handle incoming requests
 
 <br />
 
-The problem of SGLang Loadblancer is that the selection of a pair of prefill server and decode server is not traffic based. Then you can not garantee load balance among prefill servers.
+SGLang 负载均衡器的问题在于：它在选择一对 prefill 服务器和 decode 服务器时并不是基于流量或负载的。因此，无法保证各 prefill 服务器之间的负载均衡。
 
 <br />
 
-Prefill server always return frist to complete KV cache generation:
+在请求处理过程中，prefill 服务器总是最先返回结果，以完成 KV cache 的生成：
 
 <br />
 
-Refering to Dynamo workflow [^11], we draft a simple workflow for SGLang RustLB based P/D architecture to better understand how we can optimize the workflow later :
+参考 Dynamo 的工作流程 [^11]，我们草拟了一个基于 SGLang RustLB 的 P/D 架构简化流程图，以便后续优化工作流程时有更清晰的理解：
 
 <br />
 
@@ -542,20 +544,20 @@ Refering to Dynamo workflow [^11], we draft a simple workflow for SGLang RustLB 
 <p align="center">
 <img src="assets/img/SGLangPDWorkFlow.drawio.png" alt="SGLang v4.8.0 P/D workflow" style="width:50%">
 </p>
-<figcaption style="text-align:center">SGLang v4.8.0 P/D workflow</figcaption>
+<figcaption style="text-align:center">SGLang v4.8.0 P/D 工作流程</figcaption>
 </figure>
 
 <br />
 
-Each P/D process start a background thread to run a forever event loop to gather requests, the batch of its input and optional ncessary KV cache to start inference.
+每个 P/D 进程都会启动一个后台线程，运行一个永久的事件循环，用于收集请求，将其输入以及必要的 KV cache 组成一个 batch，以开始执行推理任务。
 
-## Benchmarking Method
+## 测试方法
 
-Investigating over all feasible disaggregation configs with 13 x H800 DGX SupperPod machines, and diving into SGLang (v4.8.0) disaggregation mode, we conducted online P/D disaggregation serving evalution both in server side and user side independently.
+我们在 13 台 H800 DGX SuperPod 服务器上对所有可行的 P/D 解耦部署配置进行了系统性调研，并深入分析了 SGLang v0.4.8 中的解耦部署模式，分别从服务端与客户端两个角度进行了在线 P/D 解耦推理评估。
 
 <br />
 
-To prepare for the test, we first align our hardware and software with the latest open source community, and followed instructions from SGLang team [^1] to prepare the configuration files :
+为测试做准备时，我们首先将硬件和软件环境对齐至最新的开源社区标准，并参考 SGLang 团队的官方指南 [1] 完成了配置文件的准备工作：
 
 <br />
 
@@ -564,15 +566,14 @@ To prepare for the test, we first align our hardware and software with the lates
 | EXPERT_DISTRIBUTION_PT_LOCATION | decode         | ./attachment_ep_statistics/decode_in1000out1000.json                             |
 | EXPERT_DISTRIBUTION_PT_LOCATION | prefill        | ./attachment_ep_statistics/prefill_in1024.json                                   |
 | DEEP_EP_CFG                     | prefill        | ./benchmark/kernels/deepep/deepep_nnodes_H800x4_tuned.json                       |
-| fused_moe_config                | prefill/decode | fused_moe/configs/E=257,N=256,device_name=NVIDIA_H800,block_shape=[128,128].json |
 
 <br />
 
-After obtaining the configuration files, and preparing the test scripts properly, we warm up services with a few batches of queries via CURL API since JIT kernel compilation services take a long time from cold start of SGLang event loop workers.  Once warmed up, we proceed to collect test statistics.
+完成配置文件的准备并正确设置测试脚本后，我们通过 CURL API 发送若干批次的查询请求对服务进行预热 —— 因为 SGLang 的事件循环工作线程在冷启动时需要较长时间进行 JIT 内核编译。服务预热完成后，便可开始正式采集测试统计数据。
 
-#### Hardware & Software
+#### 硬件 和 软件
 
-The hardware of H800 SuperPod used in this experiment organized in racks :
+本次实验所使用的 H800 SuperPod 硬件按机架（racks）组织部署：
 
 <br />
 
@@ -580,26 +581,26 @@ The hardware of H800 SuperPod used in this experiment organized in racks :
 <p align="center">
 <img src="assets/img/H800_SuperPod.drawio.png" alt="" style="width:50%">
 </p>
-<figcaption style="text-align:center">H800 SuperPod Sketch</figcaption>
+<figcaption style="text-align:center">H800 SuperPod 示意图</figcaption>
 </figure>
 
 <br />
 
-The NVIDIA H800 DGX has compute performance comparable to the H100 DGX, except for FP64/FP32 data type and approximate half of the communication bandwidth due to reduced NVLINK configuration. Each H800 card is connected to a single mellanox CX-7 (MT2910) NIC card, which connects to an infiniband switch, supports a peak bidirectional bandwidth of 50 GB/s.
+NVIDIA H800 DGX 在计算性能方面与 H100 DGX 相当，唯一区别在于 FP64/FP32 数据类型的处理能力较弱，以及由于 NVLINK 配置减少，其通信带宽大约为后者的一半。每张 H800 卡连接一张 Mellanox CX-7（MT2910）网络卡，通过 InfiniBand 交换机互连，峰值双向带宽可达 50 GB/s。
 
 <br />
 
-In a single node NCCL test, `nccl_all_reduce` runs at 213 GB/s bus bandwidth. In two nodes test, `nccl_all_reduce` runs at 171 GB/s bus bandwidth. In a rail test (all GPUs cross racks connected with the same ib link), `nccl_all_reduce` runs at 49 GB/s.
+在单节点 NCCL 测试中，`nccl_all_reduce` 的bus带宽为 213 GB/s；在双节点测试中，该带宽为 171 GB/s；在跨机架测试（所有 GPU 通过同一个 InfiniBand 链路跨机架连接）中，带宽为 49 GB/s。
 
 <br />
 
-Most of our communication functions in P/D disaggregation test runs DeepEP with `NVSHMEM`. DeepEP has changed a lot since the version used in May 2025 for P/D experiment by SGLang core team. So we build it from scatch inside customer docker:
+在 P/D 解耦测试中，大多数通信功能由 `DeepEP` 和 `NVSHMEM` 驱动完成。DeepEP 自 SGLang 核心团队于 2025 年 5 月进行 `P/D` 实验以来已有较大改动。因此，我们在自定义 Docker 环境中从零构建了 `DeepEP`。
 
 <br />
 
 > Deepep : deep-ep==1.1.0+c50f3d6
 
-For now, we choose mooncake as our disaggregation backend, but other backends will be tried later:
+目前我们选择 Mooncake 作为解耦（disaggregation）的后端，但未来会尝试其他后端：
 
 ```
 # optional for disaggregation option
@@ -615,7 +616,7 @@ We require the latest transfer engine as it is 10x faster ( see [PR#499](https:/
 
 > mooncake-transfer-engine==v0.3.4
 
-Tunning DeepEP is the first step in our test. Prefill nodes are 2, 3 (direct use of 3 prefill nodes may cause problem in current configuration for SGLang v0.4.8) and 4 :
+调优 DeepEP 是我们测试的第一步。预填节点数为 2、3（直接使用 3 个预填节点在当前 SGLang v0.4.8 配置中可能会导致问题）和 4：
 
 <br />
 
@@ -626,7 +627,7 @@ Tunning DeepEP is the first step in our test. Prefill nodes are 2, 3 (direct use
 
 <br />
 
-In this experiment, DeepEP test shows that the performance for `bf16` is much higher than `OCP fp8e4m3`. We tried different combination of NCCL, NVSHMEM envrionment variables, only few succeeded due to compatible problems with libtorch:
+在本次实验中，DeepEP 测试显示 `bf16` 的性能远高于 `OCP fp8e4m3`。我们尝试了不同组合的 NCCL、NVSHMEM 环境变量，但由于与 libtorch 的兼容性问题，只有少数组合测试成功：
 
 <br />
 
@@ -661,7 +662,7 @@ export NCCL_SOCKET_IFNAME=ibp24s0,ibp41s0f0,ibp64s0,ibp79s0,ibp94s0,ibp154s0,ibp
 ```
 <br />
 
-Successful tuning should expect to see this:
+成功调优后应看到如下表现：
 
 <br />
 
@@ -669,20 +670,20 @@ Successful tuning should expect to see this:
 <p align="center">
 <img src="assets/img/deepep_test_snapshot.png" alt="deepep test snapshot" style="width:80%">
 </p>
-<figcaption style="text-align:center">deepep test snapshot</figcaption>
+<figcaption style="text-align:center">deepep 测试快照</figcaption>
 </figure>
 
 <br />
 
-In SGLang v0.4.8, DeepGEMM is by default not in use, and there is no tunning configs for fused MoE triton kernels running in H800.
+在 SGLang v0.4.8 中，默认情况下 DeepGEMM 未启用，且没有针对 H800 上运行的融合 MoE Triton 内核的调优配置。
 
 <br />
 
-So we fine tuned fused MoE triton kernels to generate triton kernel configs for H800 and enable DeepGEMM JIT GEMM kernel.
+因此，我们对融合 MoE Triton 内核进行了微调，生成了适用于 H800 的 Triton 内核配置，并最终启用了DeepEP, DeepGEMM 的 JIT GEMM 内核加速 prefill。
 
 <br />
 
-Due to the system memory limit in H800, depolyment unit for Prefill and Decode are carefully selected from :
+由于 H800 系统内存限制，Prefill 和 Decode 的部署单元需从以下选项中选择：
 
 <br />
 
@@ -693,7 +694,7 @@ Due to the system memory limit in H800, depolyment unit for Prefill and Decode a
 
 <br />
 
-In our testing scripts, we classified configs as `scaling config`, `model info`, `server info`, `basic config`, `disaggregation config`, `tuning parameters`, `envrionmental variables`.
+在我们的测试脚本中，我们将配置分类为：扩展配置（scaling config）、模型信息（model info）、服务器信息（server info）、基础配置（basic config）、解耦配置（disaggregation config）、调优参数（tuning parameters）以及环境变量（environmental variables）。
 
 #### Common Basic Config
 
@@ -780,13 +781,15 @@ disaggregation_opt=" \
 "
 ```
 
-These common configs for prefill and decode disaggregation roles contain tunnable parameters `WORLD_SIZE`, `TP`, `DP`, `max_running_request_size`, `page_size`.
+这些适用于 `Prefill` 和 `Decode` 解耦角色的通用配置包含可调参数：`WORLD_SIZE`、`TP`、`DP`、`max_running_request_size` 和 `page_size`。
 
-`max_running_request_size` affects the batch size and buffer size. Page size affects number tokens transfered. We recommend to set `max_running_request_size` to `128`, and `page_size` to 32.
+其中，`max_running_request_size` 影响批处理大小和缓冲区大小，`page_size` 影响传输的 token 数量。我们建议将 `max_running_request_size` 设置为 `128`，`page_size` 设置为 `32`。
 
 <br />
 
 For Prefill node, `deepep_mode` is set to `normal`, while in decode node, is set to `low_latency`:
+
+对于 `Prefill` 节点，`deepep_mode` 设置为 `normal`；而在 `Decode` 节点，设置为 `low_latency`:
 
 <br />
 
@@ -797,11 +800,11 @@ For Prefill node, `deepep_mode` is set to `normal`, while in decode node, is set
 
 <br />
 
-Moreover, it is alwasy better for prefill nodes to set small to middle `chunk-prefill size` to reduce TTFT.
+此外，prefill 节点最好设置较小到中等的 `chunk-prefill` 大小，以减少 TTFT。
 
 <br />
 
-Besides, prefill-decode configs, expert parallel load balance should be configured :
+除此之外，除了 prefill-decode 配置外，还应配置专家并行（expert parallel）的负载均衡：
 
 ```
 #### expert distribution options
@@ -852,7 +855,7 @@ eplb_opt=" \
 
 <br />
 
-So the full config in test is hereby:
+所以测试中的完整配置如下：
 
 <br />
 
@@ -911,11 +914,11 @@ decode_node_opt=" \
 "
 ```
 
-#### Envrionmental Variables
+#### 环境变量
 
-Now SGLang enables GEMM kernels from DeepGEMM, since prefill as we observed, will always be the bottlenect of system goodput when batch size exceeds some level, we enable faster implementation of GEMM from DeepGEMM, moon-cake (0.3.4) as default.
+现在 SGLang 支持来自 DeepGEMM 的 GEMM 内核。正如我们观察到的，当批量大小超过某个阈值时，prefill 总是系统吞吐的瓶颈，因此我们默认启用来自 DeepGEMM 的更快速 GEMM 实现, 并设置 moon-cake (0.3.4) 作为默认版本。
 
-These are controled by envrionmental variables.
+这些配置通过环境变量进行控制。
 
 ```
 #### SGLang env
@@ -943,13 +946,13 @@ export NCCL_IB_GID_INDEX=3
 export NCCL_SOCKET_IFNAME=ibp24s0,ibp41s0f0,ibp64s0,ibp79s0,ibp94s0,ibp154s0,ibp170s0f0,ibp192s0
 ```
 
-#### Tunning parameters.
+#### 参数调试.
 
-The basic tunning parameters are world sizes of prefill nodes and decode nodes : P${P}D${D}. We iterative over different P/D disaggregation settings to find reasonable server side partitions for an optimized goodput rate observed in client side benchmarking.
+基本调优参数是 prefill 节点和 decode 节点的 WORLD_SIZE，即 P${P}D${D}。我们通过不同的 P/D 解耦配置进行迭代，寻找合理的服务器端划分，以在客户端基准测试中观察到的吞吐率达到优化。
 
 <br />
 
-Though we didn't achieve deepseek performance under SLOs, we found P4D6 and (P3x3)D4 output performs of P4D9 in goodput, with 1024 batch size, 1K input / 256 output to generate 95 k toks/sec input throughput, 20 k toks/sec output throughput at maximum of 356 MB/sec transfer speed, and 9~10s TTFT, less than 30% of total latency.
+虽然我们未能在 SLOs 下达到 DeepSeek 的性能，但发现 P4D6 和 (P3x3)D4 在吞吐率表现上优于 P4D9。以批量大小 1024，输入长度 1K / 输出长度 256 为例，系统可实现约 95k tokens/sec 的输入吞吐量，20k tokens/sec 的输出吞吐量，最高传输速率达到 356 MB/sec，TTFT 在 9~10 秒左右，占总延迟的不到 30%。
 
 <br />
 
@@ -988,17 +991,17 @@ memory_fraction_static=${memory_fraction_static:-0.81}
 
 <br />
 
-#### Additional Options
+#### 其他选项
 
 ###### MTP
 
-In our initial attempt (thanks to Yujie Pu), MTP decoding (with deepseek draft model) does not show improvement for the overall goodput, we will invesigate it later:
+在我们的初步尝试中（感谢 Yujie Pu），使用 DeepSeek 草案模型的 MTP 解码并未提升整体吞吐率，我们会在后续继续调查这个问题。
 
 <br />
 
 <figure>
 <p align="center">
-<img src="assets/img/p4d9-MTP.png" alt="" style="width:50%">
+<img src="assets/img/p4d9-MTP.png" alt="" style="width:80%">
 </p>
 <figcaption style="text-align:center">p4d9-MTP</figcaption>
 </figure>
@@ -1009,7 +1012,7 @@ In our initial attempt (thanks to Yujie Pu), MTP decoding (with deepseek draft m
 
 #### P2D2
 
-For P2D2 configuation, due to limited space reserved for KV cache (P node 65 GB / 79 Gb, D node 70 GB / 79 GB HBM utilization), we frequently see KV cache OOM for batch size 1024 in client side. And when batch size * input length > 128, we observed steep growth of TTFT and unreliable measurement of output throughput in SGLang :
+对于 P2D2 配置，由于 KV 缓存保留空间有限（P 节点 HBM 利用率为 65 GB / 79 GB，D 节点为 70 GB / 79 GB），我们在客户端经常遇到批量大小为 1024 时的 KV 缓存内存溢出（OOM）问题。当批量大小 × 输入长度超过 128 时，我们观察到 TTFT 急剧增长，并且 SGLang 中的输出吞吐率测量变得不可靠：
 
 <br />
 
@@ -1033,27 +1036,27 @@ For P2D2 configuation, due to limited space reserved for KV cache (P node 65 GB 
 | 64         | 1024  | 128    | 28.09   | 3064.63    | 1221.39      |             | 21.38         |                     | 19.49                           |
 
 
-Based on this observations, later we classified our online tests input in user side into two catgories :
+基于以上观察，我们后来将用户侧在线测试的输入分为两类：
 
-- short queries (in_seq_len < 128) to achieve hight goodput rate for at maximum 128 concurrencies;
+- 短查询（输入序列长度 in_seq_len < 128），以实现最多128并发下的高吞吐率；
 
-- long queries, maximum of throughput, and maximum 120s to return
+- 长查询，追求最大吞吐量，且最长返回时间为120秒。
 
-When batch size * input length exceed 128 x 128 for P2D2, transfering KV cache block inference speed, then whole system becomes network IO bound in data plane.
-
-<br />
-
-Mooncake developers identified performance issue of transfering engine in [PR#499](https://github.com/kvcache-ai/Mooncake/pull/499) and quickly integrated the new batched transfering feature into SGLang v0.4.8 (also need to install transfer-engine==0.3.4) in [PR#7236](https://github.com/sgl-project/sglang/pull/7236).
-
-Althought, 10x boost from transfering engine, network IO bound in data plane is ubiquitous in different P/D settings.
+当批量大小 × 输入长度超过 128 × 128（以 P2D2 配置为例）时，KV 缓存传输成为推理速度的瓶颈，导致整个系统在数据平面变成网络 I/O 受限。
 
 <br />
 
-If not consider goodput rate under SLOs, it is easy to obtain max input throughput 45 k toks/sec. As we analyzed above the output throughput is bounded by TTFT, hence the measurement is not accurate.
+Mooncake 开发团队在 [PR#499](https://github.com/kvcache-ai/Mooncake/pull/499) 中定位到传输引擎的性能问题，并迅速将新的批量传输功能集成到 SGLang v0.4.8（同时需要安装 transfer-engine==0.3.4），见 [PR#7236](https://github.com/sgl-project/sglang/pull/7236)。
+
+尽管传输引擎带来了10倍的性能提升，数据平面中的网络 I/O 受限问题在不同的 P/D 配置中仍然普遍存在。
 
 <br />
 
-Notablly, when input sequence length over output length has the raio of 4:1, in this H800 SuperPod machine, the utilization of GPU arrives its best, and maximum of last token generation speed arrives:
+如果不考虑 SLOs 下的吞吐率，很容易获得最大输入吞吐率 45k toks/sec。正如我们之前分析的，输出吞吐率受限于 TTFT，因此测量结果并不准确。
+
+<br />
+
+值得注意的是，当输入序列长度与输出序列长度的比率为 4:1 时，在这台 H800 SuperPod 机器上，GPU 利用率达到最佳，且最后一个 token 的生成速度达到最大值：
 
 <br />
 
@@ -1068,7 +1071,7 @@ Notablly, when input sequence length over output length has the raio of 4:1, in 
 
 #### P2D4/P4D2
 
-In P2D4 and P4D2 test, one of the objects is to determine scaling direction to reduce TTFT and maximum goodput. To reduce TTFT, as we discussed in Motivation Section, one of option is to reduce Chunk-prefill size, and reduce data parallel for prefill nodes.
+在 P2D4 和 P4D2 测试中，目标之一是确定扩展方向，以减少 TTFT 并提升最大吞吐率。正如我们在动机部分讨论的，减少 TTFT 的一个方法是减小 Chunk-prefill 大小，同时降低 Prefill 节点的数据并行度。
 
 <br />
 
@@ -1136,7 +1139,7 @@ In P2D4 and P4D2 test, one of the objects is to determine scaling direction to r
 
 <br />
 
-Data parallel and dp attention (DP > 1) must be turned on, otherwise, we shall see significant degradation of TTFT and goodput rate:
+数据并行（Data Parallel）和数据并行注意力机制（DP Attention，DP > 1）必须开启，否则我们会观察到 TTFT 和吞吐率显著下降：
 
 <br />
 
@@ -1149,17 +1152,15 @@ Data parallel and dp attention (DP > 1) must be turned on, otherwise, we shall s
 
 <br />
 
-From the statistics collected above, we conclude that to support input sequence length more than 1024 in P2D4, most of running time spent in prefill stage, hence TTFT is very close to the overall latency.
+根据上述统计数据，我们得出结论：在 P2D4 配置下，要支持超过 1024 的输入序列长度，大部分运行时间都花费在预填充（prefill）阶段，因此 TTFT 非常接近整体延迟。
 
 <br />
 
-Hence we consider to expand percentage of prefill nodes r (r > 1, r < 2).
+因此，我们考虑增加预填充节点的比例 r（r > 1，且 r < 2）。
 
 <br />
 
 #### P4D6
-
-The current config does not allow 3 Prefill nodes config, hence we proceed to experiments on P4D6 :
 
 <br />
 
@@ -1172,11 +1173,11 @@ The current config does not allow 3 Prefill nodes config, hence we proceed to ex
 
 <br />
 
-For P4D6 disaggregation test, average TTFT is raised up to 10s, and when **batch size * input_length** > 2048 * 1024, TTFT grows along a sharp slope rate.
+在 P4D6 解耦测试中，平均首个生成token时间（TTFT）升高至 10 秒左右；当批次大小 × 输入长度超过 2048 × 1024 时，TTFT 以陡峭的斜率迅速增长。
 
 #### P4D9
 
-P4D9 is gold configuration recommended by SGLang team [^8], however in our test, it does not generate acceptable goodput rate and its overall throughput is limited to 80 k toks / sec at 4 K input, 256 output length :
+P4D9 是 SGLang 团队推荐的黄金配置 [^8]，但在我们的测试中，它未能产生令人满意的吞吐率，且在输入长度为 4K、输出长度为 256 时，其整体吞吐量被限制在 8 万token/s。
 
 <br />
 
@@ -1189,8 +1190,7 @@ P4D9 is gold configuration recommended by SGLang team [^8], however in our test,
 
 <br />
 
-We verified this in online test for P4D9 disaggregation config in user side. For short queries, maximum 8 k toks /sec observed in user side (user's SDK) :
-
+我们在用户侧的在线测试中验证了 P4D9 解耦配置。对于短查询，用户侧（用户的 SDK）观察到的总输出token吞吐量仅为 8 千token/s:
 
 <br />
 
@@ -1203,7 +1203,7 @@ We verified this in online test for P4D9 disaggregation config in user side. For
 
 <br />
 
-When it comes to long query, only maximum 400 toks / sec observed in user side (user's SDK) :
+对于长查询，用户侧（用户的 SDK）仅观察到最大 400 token/s的吞吐量:
 
 <br />
 
@@ -1216,45 +1216,45 @@ When it comes to long query, only maximum 400 toks / sec observed in user side (
 
 <br />
 
-## Conclusion
+## 结论
 
-We make comprehensive study of hosting DeepSeek V3 671 `B` alike model in a disaggregated serving architecture with SGLang V0.4.8 with 13x8 H800 SuperNodes.
-
-<br />
-
-We first concluded and verified that larger prefill groups, perferablely with prefill groups over decodes groups raitio of 3:1, and less TP size, preferablely with total prefill nodes over decodes nodes raitio of 1:1, generate better TTFT and higher goodput.
+我们对在 13x8 H800 SuperPod 上，使用 SGLang V0.4.8 以分离式架构托管 DeepSeek V3 671B 类模型进行了全面研究。
 
 <br />
 
-We second verified P/D setting for large MoE models that when `input length * batch size` exceed certain number, TTFT grows suddenly and steeply, we should limit `max_running_request_size` in actual deployment.
+首先，我们总结并验证了较大的 Prefill 组（最好 Prefill 与 Decode 组的比例为 3:1）以及较小的 TP 大小（最好 Prefill 节点与 Decode 节点总数比例为 1:1）能够带来更好的 TTFT 和更高的 goodput。
 
 <br />
 
-To improve TTFT and compute efficiency of prefill nodes, we choose smaller chunked-prefill sizes.
+其次，我们验证了大规模 MoE 模型的 P/D 设置，发现当输入长度乘以批次大小超过某个阈值时，TTFT 会急剧上升，因此在实际部署中应限制 `max_running_request_size`。
 
 <br />
 
-This configuration generates almost 80 k toks / sec overall goodput and observed 8 k toks / sec in user side for short queries, compared to maximum of 10 k overall goodput per 2xH800 colocated deployment unit, much smaller throughput limits.
+为提升 Prefill 节点的 TTFT 和计算效率，我们选择了更小的 chunked-prefill 大小。
+
+<br />
+
+该配置在短查询场景下实现了接近 8 万 tokens/秒的整体 goodput，并在用户侧观察到约 8 千 tokens/秒的吞吐率，相较于 2xH800 共享部署单元最大 1 万 tokens/秒的整体 goodput，有了显著提升。
 
 ## Future Work
 
-Disaggregated serving architecture exposes multiple nodes as a deployment unit. It exploits the distinct computational characteristics of the prefill and decoding stages, and delivers significantly better overall goodput compared to traditional colocated serving architectures.
+分离式服务架构将多个节点作为一个部署单元进行暴露。它充分利用了 Prefill 阶段和解码阶段计算特性的差异，相较于传统的同机部署架构，整体吞吐量（goodput）有显著提升。
 
 <br />
 
-However, a larger deployment unit also introduces greater risk — if even a single card requires repair, the entire unit may be affected. Therefore, selecting a reasonable unit size while maintaining competitive goodput is critical for the success of this solution in real-world deployments.
+然而，更大的部署单元也带来了更高的风险——即便只有一块卡需要维修，整个单元都可能受到影响。因此，在保证有竞争力的吞吐量的同时，合理选择部署单元的规模对于该方案在实际应用中的成功至关重要。
 
 <br />
 
-Next, we will focus on communication level libraries to unlock the limit of prefill nodes and reduce TTFT.
+接下来，我们将聚焦通信层级的库，挖掘 Prefill 节点的潜力，进一步降低首次返回时间（TTFT）。
 
 ## Acknowledgement
 
-Thanks to Mr Yiwen Wang (yepmanwong@hkgai.org) and Prof Wei Xue (weixue@ust.hk) for the support and suggestion for this article, and to Andy Guo (guozhenhua@hkgai.org) for user side tests, Yu Jiepu (yujiepu@hkgai.org) for the deployment to verify effectiveness of MTP and (P3x3)D4, and to Yi Chao (chao.yi@hkgai.org) for help of arrangement of resources.
+感谢 Mr Yiwen Wang (yepmanwong@hkgai.org) 和 Prof Wei Xue (weixue@ust.hk) 对本文的支持与建议，感谢 Andy Guo (guozhenhua@hkgai.org) 负责用户侧测试，感谢 Yu Jiepu (yujiepu@hkgai.org) 负责部署以验证 MTP 和 (P3x3)D4 的有效性，感谢 Yi Chao (chao.yi@hkgai.org) 协助资源安排。
 
 <br />
 
-We reproduce the P/D disaggregation performance in our own H800 DGX SuperPod machines independently and give our best thanks to SGLang core team and communities for their engineering work, previous examples of reproduction and quick feedback to the report.
+我们在自有的 H800 DGX SuperPod 机器上独立复现了 P/D 解耦部署的性能表现，并向 SGLang 核心团队及社区致以最诚挚的感谢，感谢他们在工程实现、复现建议以及对报告的快速反馈方面所做出的贡献。
 
 ## Appendix
 
