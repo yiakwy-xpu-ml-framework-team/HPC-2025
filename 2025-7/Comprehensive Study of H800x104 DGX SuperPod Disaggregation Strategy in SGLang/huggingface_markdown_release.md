@@ -9,10 +9,35 @@ caption {
 }
 </style>
 
-> We evaluated the maximum prefill and decode goodput (throughput under SLO, i.e., TTFT < 2s, ITL < 50ms) [6] in a disaggregated LLM inference architecture using 13x8 H800 DGX SuperPod nodes. The system achieved approximately 1.3 million tokens per second (toks/sec) for input throughput and 20,000 toks/sec for max output throughput across various server-side disaggregation configurations (P3x3D4, P4D9, P4D6, P2D4, P4D2, P2D2). In the major cases, prefill is the bottlenect in our experiment, bringing us with large TTFT. Reference to the computed Prefill/Decodes nodes ratio `1.4` derived from DeepSeek workload [9], to achieve high server side goodput rates, we tried larger `P` nodes group (`3`) and smaller tp size (`48`). Performance was measured using the SGLang `bench_one_batch_server.py` benchmark [1], which evaluates URL API call performance and later `genai-bench` [10] to generate more reliable output throughput at different level of concurrencies. On the user side, we conducted online observations under service level objectives (SLOs), using evalscope [2] to benchmark OpenAI-compatible endpoint APIs with API key authentication. Under these conditions, the system sustained 25,000 toks/sec output throughput at a concurrency of 50, and 55,000 toks/sec at a concurrency of 150 for small input queries. We observed that when `batch size × input length` exceeds a certain threshold (e.g., due to KV cache transfer limitations [7]), Time to First Token (TTFT) increases sharply. Morever, to obtain better goodput rate, input seqeunce length (ISL) over output sequence length (OSL) should be at specific ratio, preferablely 4:1. As a result, overall latency dominated by TTFT if we want to achieve high thoughput with larger batch sizes and sequence length. To maintain high GPU utilization and goodput, concurrencies should be less than 128 to avoid sharp growth of TTFT. This balance is particularly effective on `H800` DGX SuperPod systems. Excessively high TTFT leads to unstable output throughput and a significant decline in server-side goodput.
+> We evaluated the maximum prefill and decode goodput (throughput under SLOs, i.e., TTFT < 2s, ITL < 50ms) [6] in a disaggregated LLM inference architecture using 13x8 H800 DGX SuperPod nodes. The system achieved approximately 1.3 million tokens per second (toks/sec) for input throughput and 20,000 toks/sec for max output throughput across various server-side disaggregation configurations ((P3x3)D4 (i.e., 3 groups of P3, 1 group of D4), P4D9, P4D6, P2D4, P4D2, P2D2). In the major cases, prefill is the bottlenect in our experiment, bringing us with large TTFT. Reference to the computed Decodes/Prefill nodes ratio `1.4` derived from DeepSeek workload [9], to achieve high server side goodput rates, we tried larger `P` nodes group (`3`) and smaller tp size (`24`). Performance was measured using the SGLang `bench_one_batch_server.py` benchmark script [1], which evaluates URL API call performance and later `genai-bench` [10] to generate more reliable output throughput at different level of concurrencies. On the user side, we conducted online observations under service level objectives (SLOs), using evalscope [2] to benchmark OpenAI-compatible endpoint APIs with API key authentication. Under these conditions, the system sustained 25,000 toks/sec output throughput at the concurrency of 50, and 55,000 toks/sec at the concurrency of 150 for small input queries. We observed that when `batch size × input length` exceeds a certain threshold (e.g., due to KV cache transferring limitations[7]), Time to First Token (TTFT) increases sharply. Morever, to obtain better goodput rate, input seqeunce length (ISL) over output sequence length (OSL) should be at specific ratio, preferablely 4:1. As a result, overall latency dominated by TTFT if we want to achieve high thoughput with larger batch sizes and sequence length. To maintain high GPU utilization and goodput, concurrencies should be less than 128 to avoid sharp growth of TTFT. This balance is particularly effective on `H800` DGX SuperPod systems. Excessively high TTFT leads to unstable output throughput and a significant decline in server-side goodput.
 
 
 Authors : [LEI WANG](https://github.com/yiakwy-xpu-ml-framework-team) (yiakwang@ust.hk), Yujie Pu (yujiepu@ust.hk), Andy Guo (guozhenhua@hkgai.org), Yi Chao (chao.yi@hkgai.org), Yiwen Wang (yepmanwong@hkgai.org), Xue Wei (weixue@ust.hk)
+
+## Contents
+
+- [Motivation & Background](#motivation--background)
+  + [Review `H800 x 2` test of Prefill Decode Colocated Architecture](#review-h800-x-2-test-of-prefill-decode-colocated-architecture)
+  + [How P/D works in SGLang](#how-pd-works-in-sglang)
+- [Benchmarking Method](#benchmarking-method)
+  + [Hardware & Software](#hardware--software)
+  + [Common Basic Config](#common-basic-config)
+  + [Envrionmental Variables](#envrionmental-variables)
+  + [Tunning parameters.](#tunning-parameters)
+  + [Additional Options](#additional-options)
+    * [MTP](#mtp)
+- [Benchmarking of P/D](#benchmarking-of-pd)
+  + [P2D2](#p2d2)
+  + [P2D4/P4D2](#p2d4p4d2)
+  + [P4D6](#p4d6)
+  + [P4D9](#p4d9)
+- [Conclusion](#conclusion)
+- [Future Work](#future-work)
+- [Acknowledgement](#acknowledgement)
+- [Appendix](#appendix)
+  + [Prefill decode nodes Colocated H800 X 2 test full reference](#prefill-decode-nodes-colocated-h800-x-2-test-full-reference)
+- [Reference](#reference)
+- [Sponsor Sources](#sponsor-sources)
 
 ## Motivation & Background
 
@@ -41,7 +66,7 @@ However chunked-prefill does not take into account distinct computing natures of
 
 <br />
 
-The process of decoding is often captured by a cuda graph for multiple rounds of generation, hence addtional overhead brought in when decoding process is batched with chunked prefill process and cuda graph is not viable.
+The process of decoding is often captured by a cuda graph for multiple rounds of generation, hence additional overhead brought in when decoding is batched with chunked prefill where cuda graph is not viable for use.
 
 <br />
 
@@ -50,11 +75,11 @@ Moreover, as observed in DistServe [4] [5] [6] on `13 B` dense model and our exp
 
 <br />
 
-Hereby disaggregated serving architecture was proposed [4]. DeepSeek further reduces latencies, and throughput by DeepEP and MLA, which were quickly integrated into SGLang, and achieves epic 73.7k toks/node/sec and 14.8k toks/node/sec under SLO at the deployment unit `P4D18`.
+Hereby disaggregated serving architecture was proposed [4]. DeepSeek further reduces latencies, and throughput by DeepEP and MLA, which were quickly integrated into SGLang, and the system achieves epic 73.7k toks/node/sec and 14.8k toks/node/sec under SLOs at the deployment unit `P4D18`.
 
 <br />
 
-However, there is a common misunderstanding that the number of P should be larger than the number D since DeepSeek does not disclose the real raio of P nodes over D in this its blog. [8].
+However, a common misunderstanding is that the number of P nodes should not exceed that of D nodes, as DeepSeek does not disclose the actual ratio of P to D nodes in its blog post [8].
 
 <br />
 
@@ -66,17 +91,19 @@ $$955 = 608 * 1e^{10} / (24 * 3600 * 73.7 * 1e^3)$$
 
 $$1314 = 168 * 1e^{10} / (24 * 3600 * 14.8 * 1e^3)$$
 
-The reference test ratio of Prefill/Decode nodes is computed as `1.4`, and the P4D18 configuration ratio is `3.27 : 1`. For H800 `13x8 DGX SuperPod`, P/D disaggregation configuation `P3x2D4`, `P3x3D4` and `P4x2D3` are hence recommended. Since Prefill is more likely to be the bottlenect of the system as we analyze, we limited the TP size to 4, becuase larger TP size degregrads inference speed and less TP size leads to less volume reserved for KV cache.
+<br />
+
+The reference test ratio of Decode/Prefill nodes is computed as `1.4 = 1314 / 955`, and the P4D18 configuration ratio is `3.27 : 1 = (955 / 4）/ (1314 / 18)`. For H800 `13x8 DGX SuperPod`, P/D disaggregation configuation `(P3x2)D4`, `(P3x3)D4` and `(P4x2)D4` are hence recommended. Since Prefill is more likely to be the bottlenect of the system as we analyze, we limited the TP size to 4, becuase larger TP size degregrads inference speed and less TP size leads to less volume reserved for KV cache.
 
 <br />
 
-In our test, `P3x3D4` and `P4D6` outperforms P9D4 with better TTFT due to less TP size, and relative more prefill stage processing capacities:
+In our test, `(P3x3)D4` and `P4D6` outperforms P9D4 with better TTFT due to less TP size, and relative more prefill stage processing capacities:
 
 <br />
 
 <div style="">
 <table border="0" cellpadding="0" cellspacing="0" width="1026" style="border-collapse: collapse; width: 769pt;">
-  <caption>P4D6, P3x3D4 outperforms P4D9 with better TTFT</cpation>
+  <caption>P4D6, (P3x3)D4 outperforms P4D9 with better TTFT</cpation>
   <thead>
     <tr height="21" style="height: 16pt;">
       <th></th>
@@ -92,7 +119,7 @@ In our test, `P3x3D4` and `P4D6` outperforms P9D4 with better TTFT due to less T
   </thead><colgroup><col width="64" style="width: 48pt;"><col width="113" style="width: 85pt;"><col width="87" span="2" style="width: 65pt;"><col width="132" style="width: 99pt;"><col width="136" style="width: 102pt;"><col width="148" style="width: 111pt;"><col width="128" style="width: 96pt;"><col width="131" style="width: 98pt;"></colgroup>
   <tbody>
     <tr height="21" style="height: 16pt;">
-      <td height="21" class="xl66" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;">P3x3D4</td>
+      <td height="21" class="xl66" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;">(P3x3)D4</td>
       <td align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;">1</td>
       <td align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;">2000</td>
       <td align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap;">200</td>
@@ -258,9 +285,9 @@ In our test, `P3x3D4` and `P4D6` outperforms P9D4 with better TTFT due to less T
     </tr>
     <tr height="21" style="height: 16pt;">
       <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
-      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">64.00</td>
-      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">128.00</td>
-      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">128.00</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">64</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">128</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">128</td>
       <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">12.51</td>
       <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">1,701.88</td>
       <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">1,064.16</td>
@@ -269,9 +296,9 @@ In our test, `P3x3D4` and `P4D6` outperforms P9D4 with better TTFT due to less T
     </tr>
     <tr height="21" style="height: 16pt;">
       <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
-      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">64.00</td>
-      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">4,096.00</td>
-      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">128.00</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">64</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">4,096</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">128</td>
       <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">20.21</td>
       <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">22,185.68</td>
       <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">975.58</td>
@@ -280,9 +307,9 @@ In our test, `P3x3D4` and `P4D6` outperforms P9D4 with better TTFT due to less T
     </tr>
     <tr height="21" style="height: 16pt;">
       <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
-      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">64.00</td>
-      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">2,048.00</td>
-      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">128.00</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">64</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">2,048</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">128</td>
       <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">41.70</td>
       <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">3,553.74</td>
       <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">1,699.56</td>
@@ -291,9 +318,9 @@ In our test, `P3x3D4` and `P4D6` outperforms P9D4 with better TTFT due to less T
     </tr>
     <tr height="21" style="height: 16pt;">
       <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
-      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">64.00</td>
-      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">1,024.00</td>
-      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">128.00</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">64</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">1,024</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">128</td>
       <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">69.72</td>
       <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">1,017.38</td>
       <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">1,543.28</td>
@@ -302,9 +329,9 @@ In our test, `P3x3D4` and `P4D6` outperforms P9D4 with better TTFT due to less T
     </tr>
     <tr height="21" style="height: 16pt;">
       <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
-      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">512.00</td>
-      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">4,096.00</td>
-      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">128.00</td>
+      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">512</td>
+      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">4,096</td>
+      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">128</td>
       <td class="xl80" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">36.75</td>
       <td class="xl80" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">85,749.88</td>
       <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">5,332.19</td>
@@ -313,9 +340,9 @@ In our test, `P3x3D4` and `P4D6` outperforms P9D4 with better TTFT due to less T
     </tr>
     <tr height="21" style="height: 16pt;">
       <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
-      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">512.00</td>
-      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">2,048.00</td>
-      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">128.00</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">512</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">2,048</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">128</td>
       <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">213.43</td>
       <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">5,021.26</td>
       <td class="xl90" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(226, 239, 218);">14,249.05</td>
@@ -324,9 +351,9 @@ In our test, `P3x3D4` and `P4D6` outperforms P9D4 with better TTFT due to less T
     </tr>
     <tr height="21" style="height: 16pt;">
       <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
-      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">512.00</td>
-      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">1,024.00</td>
-      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">128.00</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">512</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">1,024</td>
+      <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">128</td>
       <td class="xl81" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">112.81</td>
       <td class="xl79" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap;">4,849.07</td>
       <td class="xl90" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(226, 239, 218);">13,976.04</td>
@@ -335,9 +362,9 @@ In our test, `P3x3D4` and `P4D6` outperforms P9D4 with better TTFT due to less T
     </tr>
     <tr height="21" style="height: 16pt;">
       <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
-      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">1,024.00</td>
-      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">4,096.00</td>
-      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">128.00</td>
+      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">1,024</td>
+      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">4,096</td>
+      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">128</td>
       <td class="xl80" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">58.47</td>
       <td class="xl80" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">77,876.48</td>
       <td class="xl88" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(169, 208, 142);">28,407.07</td>
@@ -346,9 +373,9 @@ In our test, `P3x3D4` and `P4D6` outperforms P9D4 with better TTFT due to less T
     </tr>
     <tr height="21" style="height: 16pt;">
       <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
-      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">2,048.00</td>
-      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">4,096.00</td>
-      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">256.00</td>
+      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">2,048</td>
+      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">4,096</td>
+      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">256</td>
       <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">105.21</td>
       <td class="xl80" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">80,227.44</td>
       <td class="xl80" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">808,820.03</td>
@@ -357,9 +384,9 @@ In our test, `P3x3D4` and `P4D6` outperforms P9D4 with better TTFT due to less T
     </tr>
     <tr height="21" style="height: 16pt;">
       <td height="21" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: 等线; vertical-align: middle; border: none; text-wrap-mode: nowrap; height: 16pt;"></td>
-      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">2,048.00</td>
-      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">2,048.00</td>
-      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">256.00</td>
+      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">2,048</td>
+      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">2,048</td>
+      <td class="xl86" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">256</td>
       <td class="xl80" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">72.53</td>
       <td class="xl80" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(146, 208, 80);">89,296.97</td>
       <td class="xl88" align="right" style="padding-top: 1px; padding-right: 1px; padding-left: 1px; color: black; font-size: 12pt; font-family: Calibri; vertical-align: middle; border: none; text-wrap-mode: nowrap; background: rgb(169, 208, 142);">20,513.48</td>
@@ -383,11 +410,11 @@ Given an input sequence length (in_seq_len : 128 ~ 4096) and short output sequen
 
 - maximum of prefill goodput, when seving DeepSeek V3 alike massive MoE model, arrives at specific `batch size (bs) x output length (out_seq_len)` in an aggregated LLM inference architecture, and at specific `batch size (bs) * input length (in_seq_len)` in a disaggregated LLM inference architecture;
 
-- prefill is more likely to be the bottlenect, hence more prefill nodes (1:1) are preferred;
+- prefill is more likely to be the bottlenect, hence more prefill groups (P3x3, i.e. 3 groups of P3) and ratio of `WORLD_SIZE` of prefill group over the decode group is recommended to be in the range of (0.75（P3D4）, 1(PXDX));
 
 <br />
 
-Unlike serving `13 B` dense model in DistServe [4] [5] [6] , prefill goodput in serving `671 B` large MoE (8 out of 256 experts, plus `P * 8` redundant experts), is negatively affected by the output length and batch sizes once its max is achieved. The details of statistics can be found in Appendix.
+Unlike serving `13 B` dense model in DistServe [4] [5] [6] , prefill goodput in serving `671 B` large MoE (8 out of 256 experts, plus `P * 8` redundant experts), is negatively affected by the product of the output length and the batch size until its max is achieved. The details of statistics can be found in Appendix.
 
 <br />
 
@@ -399,7 +426,7 @@ In a `H800 x 2 (DGX SuperPod)` test config, each node is connected via infiniban
 
 <figure>
 <p align="center">
-<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-7/Comprehensive%20Study%20of%20H800x104%20DGX%20SuperPod%20Disaggregation%20Strategy%20in%20SGLang/assets/img/aggregated_input_tput.png" alt="aggregated input throughput achieve max at specific batch_size x otuput_length" style="width:50%">
+<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-7/Comprehensive%20Study%20of%20H800x104%20DGX%20SuperPod%20Disaggregation%20Strategy%20in%20SGLang/assets/img/aggregated_input_tput.png" alt="aggregated input throughput achieve max at specific batch_size x otuput_length" style="width:80%">
 </p>
 <figcaption style="text-align:center">aggregated input throughput achieve max at specific batch_size x otuput_length</figcaption>
 </figure>
@@ -412,9 +439,16 @@ When `batch size x output length` exceeds `128x128`, we observed  significant dr
 
 <figure>
 <p align="center">
-<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-7/Comprehensive%20Study%20of%20H800x104%20DGX%20SuperPod%20Disaggregation%20Strategy%20in%20SGLang/assets/img/tput-ttft.png" alt="input throughput and ttft" style="width:50%">
+<img src="assets/img/input-tput.png" alt="input throughput - ttft (a)" style="width:80%">
 </p>
-<figcaption style="text-align:center">input throughput and ttft</figcaption>
+<figcaption style="text-align:center">input throughput - ttft (a)</figcaption>
+</figure>
+
+<figure>
+<p align="center">
+<img src="assets/img/ttft.png" alt="input throughput - ttft (b)" style="width:80%">
+</p>
+<figcaption style="text-align:center">input throughput - ttft (b)</figcaption>
 </figure>
 
 <br />
@@ -448,7 +482,7 @@ docker_args=$(echo -it --rm --privileged \
  $IMG
 )
 
-# P3x3D4 setup
+# (P3x3)D4 setup
 docker run --gpus all "${docker_args[@]}" python -m sglang.srt.disaggregation.mini_lb \
   --prefill "http://${prefill_group_0_master_addr}:${api_port}" \
             "http://${prefill_group_1_master_addr}:${api_port}" \
@@ -457,11 +491,15 @@ docker run --gpus all "${docker_args[@]}" python -m sglang.srt.disaggregation.mi
   --rust-lb
 ```
 
-You can also tune TP size as P node could has less TP size as D nodes to achieve better TTFT.
+<br />
+
+One can also tune the TP size, as P nodes can have smaller TP sizes than D nodes to achieve better TTFT.
 
 <br />
 
-Two load balancer provided `RustLB` and old `MiniLoadBalancer`. They follow the same HTTP API to redirect HTTP requests to prefill and decode servers respectively:
+Two load balancer `RustLB` and old `MiniLoadBalancer` are provided. They follow the same HTTP API to redirect HTTP requests to prefill and decode servers respectively:
+
+<br />
 
 ```
 # load balance API interface
@@ -469,6 +507,10 @@ INFO:     10.33.4.141:41296 - "GET /get_server_info HTTP/1.1" 200 OK
 INFO:     10.33.4.141:41312 - "POST /flush_cache HTTP/1.1" 200 OK
 INFO:     10.33.4.141:41328 - "POST /generate HTTP/1.1" 200 OK
 ```
+
+<br />
+
+They are also internally implemented in the same way to handle incoming requests.
 
 <br />
 
@@ -492,11 +534,11 @@ INFO:     10.33.4.141:41328 - "POST /generate HTTP/1.1" 200 OK
 
 <br />
 
-The problem of SGLang Loadblancer is that the selection of a pair of prefill server and decode server is not traffic based. Then you can not garantee load balance among prefill serveres.
+The problem of SGLang Loadblancer is that the selection of a pair of prefill server and decode server is not traffic based. Then you can not garantee load balance among prefill servers.
 
 <br />
 
-Prefill server always return frist to complete KV cache generation:
+Prefill server always return first to complete KV cache generation:
 
 <br />
 
@@ -506,14 +548,14 @@ Refering to Dynamo workflow [11], we draft a simple workflow for SGLang RustLB b
 
 <figure>
 <p align="center">
-<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-7/Comprehensive%20Study%20of%20H800x104%20DGX%20SuperPod%20Disaggregation%20Strategy%20in%20SGLang/assets/img/SGLangPDWorkFlow.drawio.png" alt="SGLang v4.8.0 P/D workflow" style="width:50%">
+<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-7/Comprehensive%20Study%20of%20H800x104%20DGX%20SuperPod%20Disaggregation%20Strategy%20in%20SGLang/assets/img/SGLangPDWorkFlow.drawio.png" alt="SGLang v4.8.0 P/D workflow" style="width:80%">
 </p>
 <figcaption style="text-align:center">aggregated input throughput achieve max at specific batch_size x otuput_length</figcaption>
 </figure>
 
 <br />
 
-Each P/D process start a background thread to run a forever event loop to gather requests, the batch of its input and optional ncessary KV cache to start inference.
+Each P/D process starts a background thread to run a forever event loop to gather requests, the batch of its input and optional ncessary KV cache to start inference.
 
 ## Benchmarking Method
 
@@ -629,15 +671,15 @@ export NCCL_SOCKET_IFNAME=ibp24s0,ibp41s0f0,ibp64s0,ibp79s0,ibp94s0,ibp154s0,ibp
 ```
 <br />
 
-Successufl tuning should expect to see this:
+Successful tuning should expect to see this:
 
 <br />
 
 <figure>
 <p align="center">
-<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-7/Comprehensive%20Study%20of%20H800x104%20DGX%20SuperPod%20Disaggregation%20Strategy%20in%20SGLang/assets/img/deepep_test_snapshot.png" alt="deepep test snapshot" style="width:50%">
+<img src="https://raw.githubusercontent.com/yiakwy-xpu-ml-framework-team/HPC-2025/main/2025-7/Comprehensive%20Study%20of%20H800x104%20DGX%20SuperPod%20Disaggregation%20Strategy%20in%20SGLang/assets/img/deepep_test_snapshot.png" alt="deepep test snapshot" style="width:80%">
 </p>
-<figcaption style="text-align:center">deepep test snapshot</figcaption>
+<figcaption style="text-align:center">[Fig] deepep test snapshot</figcaption>
 </figure>
 
 <br />
@@ -690,20 +732,21 @@ concurrency_opt=" \
 
 if [ "$DP" -eq 1 ]; then
   dp_attention_opt=""
+  dp_lm_head_opt=""
+  deepep_moe_opt=""
 else
   dp_attention_opt=" \
     --enable-dp-attention \
   "
-fi
-# in this test, we use deep-ep==1.1.0+c50f3d6
-
-if [ "$DP" -eq 1 ]; then
-deepep_moe_opt=""
-else
-deepep_moe_opt=" \
-  --enable-deepep-moe \
-  --deepep-mode ${deepep_mode} \
-"
+  dp_lm_head_opt=" \
+    --enable-dp-lm-head \
+  "
+  # in this test, we use deep-ep==1.1.0+c50f3d6
+  # decode is in low_latency mode
+  deepep_moe_opt=" \
+    --enable-deepep-moe \
+    --deepep-mode normal \
+  "
 fi
 
 log_opt=" \
@@ -732,6 +775,12 @@ radix_cache_opt=" \
   --disable-radix-cache \
 "
 
+##### Optimization Options
+
+batch_overlap_opt=" \
+  --enable-two-batch-overlap \
+"
+
 #### Disaggregation config
 
 ib_devices="mlx5_0,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_9,mlx5_10,mlx5_11"
@@ -740,6 +789,8 @@ disaggregation_opt=" \
   --disaggregation-mode ${disaggregation_mode} \
 "
 ```
+
+<br />
 
 These common configs for prefill and decode disaggregation roles contain tunnable parameters `WORLD_SIZE`, `TP`, `DP`, `max_running_request_size`, `page_size`.
 
@@ -767,40 +818,62 @@ Besides, prefill-decode configs, expert parallel load balance should be configur
 ```
 #### expert distribution options
 
-if [ "$stage" == "create_ep_dis" ]; then
-create_ep_dis_opt=" \
-  --expert-distribution-recorder-mode stat \
-  --disable-overlap-schedule \
-  --expert-distribution-recorder-buffer-size -1 \
-"
+if [ "$deepep_moe_opt" != "" ]; then
 
-expert_distribution_opt=""
-else
-create_ep_dis_opt=""
+  if [ "$stage" == "create_ep_dis" ]; then
+    create_ep_dis_opt=" \
+      --expert-distribution-recorder-mode stat \
+      --disable-overlap-schedule \
+      --expert-distribution-recorder-buffer-size -1 \
+    "
 
-expert_distribution_opt=" \
-  --init-expert-location ${EXPERT_DISTRIBUTION_PT_LOCATION} \
-"
+    expert_distribution_opt=""
+  else
+    create_ep_dis_opt=""
+
+    expert_distribution_opt=" \
+      --init-expert-location ${EXPERT_DISTRIBUTION_PT_LOCATION} \
+    "
+  fi
 fi
 
-ep_num_redundant_experts_opt=" \
-  --ep-num-redundant-experts 32 \
+#  --enable-tokenizer-batch-encode \
+nccl_opts=" \
+  --enable-nccl-nvls \
 "
 
 #### EP Load balance - Prefill
 
-deepep_opt=" \
-  --deepep-config $DEEP_EP_CFG \
-"
+if [ "$deepep_moe_opt" == "" ]; then
 
-eplb_opt=" \
-  --enable-eplb \
-  --eplb-algorithm deepseek \
-  --ep-dispatch-algorithm dynamic \
-  --eplb-rebalance-num-iterations 500 \
-  $ep_num_redundant_experts_opt \
-  $deepep_opt \
-"
+  moe_dense_tp_opt=""
+
+  eplb_opt=""
+
+else
+
+  moe_dense_tp_opt=" \
+    --moe-dense-tp-size ${moe_dense_tp_size} \
+  "
+
+  deepep_opt=" \
+    --deepep-config $DEEP_EP_CFG \
+  "
+
+  ep_num_redundant_experts_opt=" \
+    --ep-num-redundant-experts 32 \
+  "
+
+  rebalance_iters=1024
+  eplb_opt=" \
+    --enable-eplb \
+    --eplb-algorithm deepseek \
+    --ep-dispatch-algorithm dynamic \
+    --eplb-rebalance-num-iterations $rebalance_iters \
+    $ep_num_redundant_experts_opt \
+    $deepep_opt \
+  "
+fi
 
 #### EP Load balance - Decode
 
@@ -818,7 +891,7 @@ So the full config in test is hereby:
 <br />
 
 ```
-#### Full basic config
+#### Full Basic Common Config
 basic_config_opt=" \
   --dist-init-addr $MASTER_ADDR:$MASTER_PORT \
   --nnodes ${WORLD_SIZE} --node-rank $RANK --tp $TP --dp $DP \
@@ -872,6 +945,8 @@ decode_node_opt=" \
 "
 ```
 
+<br />
+
 #### Envrionmental Variables
 
 Now SGLang enables GEMM kernels from DeepGEMM, since prefill as we observed, will always be the bottlenect of system goodput when batch size exceeds some level, we enable faster implementation of GEMM from DeepGEMM, moon-cake (0.3.4) as default.
@@ -910,7 +985,7 @@ The basic tunning parameters are world sizes of prefill nodes and decode nodes :
 
 <br />
 
-Though we didn't achieve deepseek performance under SLO, we found P4D6 and P3X3D4 output performs of P4D9 in goodput, with 1024 batch size, 1K input / 256 output to generate 95 k toks/sec input throughput, 20 k toks/sec output throughput at maximum of 356 MB/sec transfer speed, and 9~10s TTFT, less than 30% of total latency.
+Though we didn't achieve deepseek performance under SLO, we found P4D6 and (P3x3)D4 output performs of P4D9 in goodput, with 1024 batch size, 1K input / 256 output to generate 95 k toks/sec input throughput, 20 k toks/sec output throughput at maximum of 356 MB/sec transfer speed, and 9~10s TTFT, less than 30% of total latency.
 
 <br />
 
@@ -1120,8 +1195,6 @@ Hence we consider to expand percentage of prefill nodes r (r > 1, r < 2).
 
 #### P4D6
 
-The current config does not allow 3 Prefill nodes config, hence we proceed to experiments on P4D6 :
-
 <br />
 
 <figure>
@@ -1183,11 +1256,11 @@ We make comprehensive study of hosting DeepSeek V3 671 `B` alike model in a disa
 
 <br />
 
-We first concluded and verified that larger prefill groups, perferablely with prefill groups over decodes groups raitio of 3:1, and less TP size, preferablely with total prefill nodes over decodes nodes raitio of 1:1, generate better TTFT and higher goodput.
+We first concluded and verified that larger prefill groups — preferably with a prefill-to-decode group ratio of 3:1 — and smaller TP sizes — preferably with a total prefill-to-decode node ratio of 1:1 —, generate better TTFT and higher goodput.
 
 <br />
 
-We second verified P/D setting for large MoE models that when `input length * batch size` exceed certain number, TTFT grows suddenly and steeply, we should limit `max_running_request_size` in actual deployment.
+We second verified the P/D setting for large MoE models that leads to sharp TTFT growth when `input length * batch size` exceed certain number, we should limit `max_running_request_size` in actual deployment.
 
 <br />
 
@@ -1199,15 +1272,15 @@ This configuration generates almost 80 k toks / sec overall goodput and observed
 
 ## Future Work
 
-Disaggregation serving architecture exposes multiple nodes as deployment unit. It exploit the distinct computing nature of prefill stage and decoding stages, gives much competing overall goodput compared to traditional colocated serving architecture.
+Disaggregated serving architecture exposes multiple nodes as a deployment unit. It exploits the distinct computational characteristics of the prefill and decoding stages, and delivers significantly better overall goodput compared to traditional colocated serving architectures.
 
-However, larger deplyment unit, means more risks if one the card needs to repaire. Hence reasonable size of serving unit and competing overall goodput is essential to the success of this solution in real world.
+However, a larger deployment unit also introduces greater risk — if even a single card requires repair, the entire unit may be affected. Therefore, selecting a reasonable unit size while maintaining competitive goodput is critical for the success of this solution in real-world deployments.
 
-Next, we will focus on communication level libraries to unlock the limit of prefill nodes and reduce TTFT.
+Next, we focus on communication-level libraries to unlock the full potential of prefill nodes and further reduce TTFT.
 
 ## Acknowledgement
 
-Thanks to Mr Yiwen Wang (yepmanwong@hkgai.org) and Prof Wei Xue (weixue@ust.hk) for the support and suggestion for this article, and to Andy Guo (guozhenhua@hkgai.org) for user side tests, Yu Jiepu (yujiepu@hkgai.org) for the deployment to verify effectiveness of MTP and P3x3D4, and to Yi Chao (chao.yi@hkgai.org) for help of arrangement of resources.
+Thanks to Mr Yiwen Wang (yepmanwong@hkgai.org) and Prof Wei Xue (weixue@ust.hk) for the support and suggestion for this article, and to Andy Guo (guozhenhua@hkgai.org) for user side tests, Yu Jiepu (yujiepu@hkgai.org) for the deployment to verify effectiveness of MTP and (P3x3)D4, and to Yi Chao (chao.yi@hkgai.org) for help of arrangement of resources.
 
 ## Appendix
 
@@ -1425,6 +1498,7 @@ Thanks to Mr Yiwen Wang (yepmanwong@hkgai.org) and Prof Wei Xue (weixue@ust.hk) 
 [10]: SGLang genai-bench : https://github.com/sgl-project/genai-bench, accessed online on 18 July
 
 [11]: https://github.com/ai-dynamo/dynamo/blob/main/docs/images/dynamo_flow.png, accessed online on 18 July
+
 
 ## Sponsor Sources
 Also see [Github](https://github.com/yiakwy-xpu-ml-framework-team/HPC-2025/blob/main/2025-7/Comprehensive%20Study%20of%20H800x104%20DGX%20SuperPod%20Disaggregation%20Strategy%20in%20SGLang/Comprehensive%20Study%20of%20H800x104%20DGX%20SuperPod%20Disaggregation%20Strategy%20in%20SGLang%20v0.4.8.md)

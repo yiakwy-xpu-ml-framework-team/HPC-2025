@@ -7,7 +7,7 @@ caption {
 }
 </style>
 
-> We evaluated the maximum prefill and decode goodput (throughput under SLOs, i.e., TTFT < 2s, ITL < 50ms) [^6] in a disaggregated LLM inference architecture using 13x8 H800 DGX SuperPod nodes. The system achieved approximately 1.3 million tokens per second (toks/sec) for input throughput and 20,000 toks/sec for max output throughput across various server-side disaggregation configurations ((P3x3)D4, P4D9, P4D6, P2D4, P4D2, P2D2). In the major cases, prefill is the bottlenect in our experiment, bringing us with large TTFT. Reference to the computed Decodes/Prefill nodes ratio `1.4` derived from DeepSeek workload [^9], to achieve high server side goodput rates, we tried larger `P` nodes group (`3`) and smaller tp size (`24`). Performance was measured using the SGLang `bench_one_batch_server.py` benchmark [^1], which evaluates URL API call performance and later `genai-bench` [^10] to generate more reliable output throughput at different level of concurrencies. On the user side, we conducted online observations under service level objectives (SLOs), using evalscope [^2] to benchmark OpenAI-compatible endpoint APIs with API key authentication. Under these conditions, the system sustained 25,000 toks/sec output throughput at a concurrency of 50, and 55,000 toks/sec at a concurrency of 150 for small input queries. We observed that when `batch size × input length` exceeds a certain threshold (e.g., due to KV cache transfer limitations [^7]), Time to First Token (TTFT) increases sharply. Morever, to obtain better goodput rate, input seqeunce length (ISL) over output sequence length (OSL) should be at specific ratio, preferablely 4:1. As a result, overall latency dominated by TTFT if we want to achieve high thoughput with larger batch sizes and sequence length. To maintain high GPU utilization and goodput, concurrencies should be less than 128 to avoid sharp growth of TTFT. This balance is particularly effective on `H800` DGX SuperPod systems. Excessively high TTFT leads to unstable output throughput and a significant decline in server-side goodput.
+> We evaluated the maximum prefill and decode goodput (throughput under SLOs, i.e., TTFT < 2s, ITL < 50ms) [^6] in a disaggregated LLM inference architecture using 13x8 H800 DGX SuperPod nodes. The system achieved approximately 1.3 million tokens per second (toks/sec) for input throughput and 20,000 toks/sec for max output throughput across various server-side disaggregation configurations ((P3x3)D4 (i.e., 3 groups of P3, 1 group of D4), P4D9, P4D6, P2D4, P4D2, P2D2). In the major cases, prefill is the bottlenect in our experiment, bringing us with large TTFT. Reference to the computed Decodes/Prefill nodes ratio `1.4` derived from DeepSeek workload [^9], to achieve high server side goodput rates, we tried larger `P` nodes group (`3`) and smaller tp size (`24`). Performance was measured using the SGLang `bench_one_batch_server.py` benchmark [^1], which evaluates URL API call performance and later `genai-bench` [^10] to generate more reliable output throughput at different level of concurrencies. On the user side, we conducted online observations under service level objectives (SLOs), using evalscope [^2] to benchmark OpenAI-compatible endpoint APIs with API key authentication. Under these conditions, the system sustained 25,000 toks/sec output throughput at a concurrency of 50, and 55,000 toks/sec at a concurrency of 150 for small input queries. We observed that when `batch size × input length` exceeds a certain threshold (e.g., due to KV cache transfer limitations [^7]), Time to First Token (TTFT) increases sharply. Morever, to obtain better goodput rate, input seqeunce length (ISL) over output sequence length (OSL) should be at specific ratio, preferablely 4:1. As a result, overall latency dominated by TTFT if we want to achieve high thoughput with larger batch sizes and sequence length. To maintain high GPU utilization and goodput, concurrencies should be less than 128 to avoid sharp growth of TTFT. This balance is particularly effective on `H800` DGX SuperPod systems. Excessively high TTFT leads to unstable output throughput and a significant decline in server-side goodput.
 
 
 Authors : [LEI WANG](https://github.com/yiakwy-xpu-ml-framework-team) (yiakwang@ust.hk), Yujie Pu (yujiepu@ust.hk), Andy Guo (guozhenhua@hkgai.org), Yi Chao (chao.yi@hkgai.org), Yiwen Wang (yepmanwong@hkgai.org), Xue Wei (weixue@ust.hk)
@@ -89,7 +89,7 @@ $$955 = 608 * 1e^{10} / (24 * 3600 * 73.7 * 1e^3)$$
 
 $$1314 = 168 * 1e^{10} / (24 * 3600 * 14.8 * 1e^3)$$
 
-The reference test ratio of Decode/Prefill nodes is computed as `1.4`, and the P4D18 configuration ratio is `3.27 : 1`. For H800 `13x8 DGX SuperPod`, P/D disaggregation configuation `(P3x2)D4`, `(P3x3)D4` and `(P4x2)D4` are hence recommended. Since Prefill is more likely to be the bottlenect of the system as we analyze, we limited the TP size to 4, becuase larger TP size degregrads inference speed and less TP size leads to less volume reserved for KV cache.
+The reference test ratio of Decode/Prefill nodes is computed as `1.4 = 1314 / 955`, and the P4D18 configuration ratio is `3.27 : 1 = (955 / 4) : (1314 / 18) `. For H800 `13x8 DGX SuperPod`, P/D disaggregation configuation `(P3x2)D4`, `(P3x3)D4` and `(P4x2)D3` are hence recommended. Since Prefill is more likely to be the bottlenect of the system as we analyze, we limited the TP size to 4, becuase larger TP size degregrads inference speed and less TP size leads to less volume reserved for KV cache.
 
 <br />
 
@@ -1159,8 +1159,6 @@ Hence we consider to expand percentage of prefill nodes r (r > 1, r < 2).
 
 #### P4D6
 
-The current config does not allow 3 Prefill nodes config, hence we proceed to experiments on P4D6 :
-
 <br />
 
 <figure>
@@ -1472,3 +1470,6 @@ We reproduce the P/D disaggregation performance in our own H800 DGX SuperPod mac
 [^10]: SGLang genai-bench : https://github.com/sgl-project/genai-bench, accessed online on 18 July
 
 [^11]: https://github.com/ai-dynamo/dynamo/blob/main/docs/images/dynamo_flow.png, accessed online on 18 July
+
+## Sponsor Sources
+[Huggingface](https://huggingface.co/blog/yiakwy-xpu-team/h800x104-disagg-serving-on-sglang)
