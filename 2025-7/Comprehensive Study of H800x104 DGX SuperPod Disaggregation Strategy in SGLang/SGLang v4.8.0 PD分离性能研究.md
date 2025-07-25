@@ -44,10 +44,7 @@ caption {
 
 <br />
 
-此外，正如 
-
-DistServe [^4][^5][^6] 在 13B 稠密模型上的观察结果，以及我们在 671B MoE 模型实验中的验证，在 colocated 服务系统中，一旦 `batch_size × output_length` 超过某个阈值（如 128(bs) × 128(OSL)），prefill 的计算成本将显著上升，与 chunked prefill 的切分大小无关。
-
+此外，正如 DistServe [^4][^5][^6] 在 13B 稠密模型上的观察结果，以及我们在 671B MoE 模型实验中的验证，在 colocated 服务系统中，一旦 `batch_size × output_length` 超过某个阈值（如 128(bs) × 128(OSL)），prefill 的计算成本将显著上升，与 chunked prefill 的切分大小无关。
 
 <br />
 
@@ -422,7 +419,7 @@ $$1314 = 168 * 1e^{10} / (24 * 3600 * 14.8 * 1e^3)$$
 <p align="center">
 <img src="assets/img/aggregated_input_tput.png" alt="aggregated input throughput achieve max at specific batch_size x output_length" style="width:50%">
 </p>
-<figcaption style="text-align:center">同机部署架构下，最大输入吞吐在确定的 `batch_size x OSL` 达到 </figcaption>
+<figcaption style="text-align:center">同机部署架构下，最大输入吞吐在确定的 batch_size x OSL 达到 </figcaption>
 </figure>
 
 <br />
@@ -1445,7 +1442,7 @@ P4D9 是 SGLang 团队推荐的黄金配置 [^8]，但在我们的测试中，�
 </table>
 
 
-## Reference
+## 参考文献
 
 [^1]: Instruction for Running DeepSeek with Large-scale PD and EP, https://github.com/sgl-project/sglang/issues/6017, retrieved on 12 July 2025.
 
