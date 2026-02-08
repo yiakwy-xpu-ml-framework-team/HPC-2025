@@ -1,6 +1,6 @@
 > RLHF in VeRL before 2025.12 requires colocated deployment [^1] [^3] of inference (actor ref rollout) and post training (actor in GRPO). In our experiments, large scale post training of GPTOSS [^2] with GRPO [^4] and `512` (64x8) GPU cards of `H800 DGX SupperPod`, demonstrated linear scaling of postraining of GPTOSS-20B over `64` (8x8) DGX SuperPod H800 cards at fixed float precision, reducing training job from `13` hrs (and upto 2 weeks to prepare) to `2` hrs, more than `500~598` toks/sec throughput, facilitating **`week-zero`** support. Training over `16x8` GPUs, it is necessary to separate nodes for inferences from those for training and `disable parameters offloading`. And these capabilities have been supported in the lastest VeRL as we extends the results in our proprietary `Slurm` post training platform. Besides, we also explored the possibility of using low bits and ultra low bits in the last year, and finally decided to use BF16 and FP8 as our main datatype of rollout system running inside our `Slurm` post training platform.
 
-Authors : [LEI WANG](https://github.com/yiakwy-xpu-ml-framework-team) (yiakwang@ust.hk), Zhu Junqi (nickzhu@ust.hk), Guo Shengyao (guoshengyao@ust.hk), Pan Kunhao, Han Sirui (siruihan@ust.hk), Xue Wei (weixue@ust.hk)
+Authors : [LEI WANG](https://github.com/yiakwy-xpu-ml-framework-team) (yiakwang@ust.hk), [Bo Yan](https://github.com/iseekyan) (bayan@nvidia.com), Zhu Junqi (nickzhu@ust.hk), Guo Shengyao (guoshengyao@ust.hk), Pan Kunhao (pankunhao@gmail.com), Han Sirui (siruihan@ust.hk), Xue Wei (weixue@ust.hk)
 
 ## Contents
 
@@ -28,7 +28,7 @@ Authors : [LEI WANG](https://github.com/yiakwy-xpu-ml-framework-team) (yiakwang@
 
 #### GPTOSS Appetizers : Art of Balance of Performance, Affordability and Speed
 
-Calling for light weight reasoning model with MoE architecture for making tool call decision in an agentic workflow, particularly with activated parameters of sizes ranging from 3B to 5B, have been roaring up since DeepSeek V3 and V3.1. Recorded in Aug 5 2025, GPTOSS 20B achieved (409 toks/sec) to be the most fast, yet agentic ready, model in Artifical Analysis Leaderboard[^5], and GPTOSS 120B is still the most fast, yet capable open source model as composing this article:
+Calling up for light weight reasoning model with MoE architecture for making tool call decision in an agentic workflow, particularly with activated parameters of sizes ranging from 3B to 5B, has been roaring up since DeepSeek V3 and V3.1. Recorded in `Aug 5 2025`, GPTOSS `20B` achieved (`409` toks/sec) to be the most fast, yet agentic ready, model in Artifical Analysis Leaderboard[^5], and GPTOSS 120B is still the most fast, yet capable open source model as composing this article:
 
 <br />
 
@@ -169,7 +169,7 @@ The naive idea is that by ustilizing flexible partition schemes of Megatron, we 
 
 <br/>
 
-The initial estimation of `EP` (`EDP`) for GPTOSS-120b (32 experts) and GPTOSS-20b to be `4` and `3` respectively. With `PP` (`VPP`) we can further increase the throughput and finally reduced our training jobs from `13` hrs to `9` withtout throughput more than `596 toks/sec`. More details can be found in section of (`main experiment`)[#main-experiment].
+The initial estimation of `EP` (`EDP`) for GPTOSS-120b (32 experts) and GPTOSS-20b to be `4` and `3` respectively. With `PP` (`VPP`) we can further increase the throughput and finally reduced our training jobs from `13` hrs to `9` with throughput more than `596 toks/sec`. More details can be found in section of (`main experiment`)[#main-experiment].
 
 <br />
 
