@@ -1,4 +1,4 @@
-> RLHF in VeRL before 2025.12 requires colocated deployment [^1] [^3] of inference (actor ref rollout) and post training (actor in GRPO). In our experiments, large scale post training of GPTOSS [^2] with GRPO [^4] and `512` (64x8) GPU cards of `H800 DGX SupperPod`, demonstrated linear scaling of postraining of GPTOSS-20B over `64` (8x8) DGX SuperPod H800 cards at fixed float precision, reducing training job from `13` hrs (and upto 2 weeks to prepare) to `2` hrs, more than `500~598` toks/sec throughput, facilitating **`week-zero`** support. Training over `16x8` GPUs, it is necessary to separate nodes for inferences from those for training and `disable parameters offloading`. And these capabilities have been supported in the lastest VeRL as we extends the results in our proprietary `Slurm` post training platform. Besides, we also explored the possibility of using low bits and ultra low bits in the last year, and finally decided to use BF16 and FP8 as our main datatype of rollout system running inside our `Slurm` post training platform.
+> RLHF in VeRL before 2025.12 requires colocated deployment [^1] [^3] of inference (actor ref rollout) and training (actor in GRPO). In our experiments, large scale post training of GPTOSS [^2] with GRPO [^4] and `512` (64x8) GPU cards of `H800 DGX SupperPod`, demonstrated linear scaling of postraining of GPTOSS-20B over `64` (8x8) `H800 DGX SuperPod` GPU cards at the fixed float precision, reducing training job cost from `13` hrs (and upto 2 weeks to prepare) to `2` hrs, around `500~598` toks/sec throughput, facilitating **`week-zero`** support. Training over `16x8` GPUs, it is necessary to disable `parameters offloading` and separate nodes for inferences from those for training. And these capabilities have been supported in the lastest VeRL as we extends the results in our proprietary `Slurm` post training platform. Besides, we also explored the possibility of using low bits and ultra low bits in the last year, and finally decided to use BF16 and FP8 as our main datatype of rollout system running inside our `Slurm` post training platform.
 
 Authors : [LEI WANG](https://github.com/yiakwy-xpu-ml-framework-team) (yiakwang@ust.hk), [Bo Yan](https://github.com/iseekyan) (bayan@nvidia.com), Zhu Junqi (nickzhu@ust.hk), Guo Shengyao (guoshengyao@ust.hk), Pan Kunhao (pankunhao@gmail.com), Han Sirui (siruihan@ust.hk), Xue Wei (weixue@ust.hk)
 
@@ -28,7 +28,7 @@ Authors : [LEI WANG](https://github.com/yiakwy-xpu-ml-framework-team) (yiakwang@
 
 #### GPTOSS Appetizers : Art of Balance of Performance, Affordability and Speed
 
-Calling up for light weight reasoning model with MoE architecture for making tool call decision in an agentic workflow, particularly with activated parameters of sizes ranging from 3B to 5B, has been roaring up since DeepSeek V3 and V3.1. Recorded in `Aug 5 2025`, GPTOSS `20B` achieved (`409` toks/sec) to be the most fast, yet agentic ready, model in Artifical Analysis Leaderboard[^5], and GPTOSS 120B is still the most fast, yet capable open source model as composing this article:
+Calling up for light weight reasoning MoE models for making tool call decisions in an agentic workflow, particularly with activated parameters of sizes ranging from `3B` to `5B`, has been roaring up since DeepSeek V3 and V3.1. Recorded in `Aug 5 2025`, GPTOSS `20B` achieved `409` toks/sec to be the most fast agentic ready open model in Artifical Analysis Leaderboard [^5], and GPTOSS `120B` is still the most fast open model as composing this article [^6]:
 
 <br />
 
@@ -36,7 +36,7 @@ Calling up for light weight reasoning model with MoE architecture for making too
 <p align="center">
 <img src="assets/img/gptoss-20b-6-Aug-2025.png" alt="gptoss-20b-6-Aug-2025" style="width:120%">
 </p>
-<figcaption style="text-align:center">GPTOSS 20b chieved the most fast model on Aug 6 2025</figcaption>
+<figcaption style="text-align:center">GPTOSS 20b chieved the most fast open model on Aug 6 2025</figcaption>
 </figure>
 
 <br />
@@ -45,14 +45,16 @@ Calling up for light weight reasoning model with MoE architecture for making too
 <p align="center">
 <img src="assets/img/gptoss-120b-6-Feb-2026.png" alt="gptoss-120b-6-Feb-2026" style="width:120%">
 </p>
-<figcaption style="text-align:center">GPTOSS 120b keep the most fast open source model in 6 Feb 2026 since Aug 6 2025</figcaption>
+<figcaption style="text-align:center">GPTOSS 120b keep the most fast open model from Aug 6 2025 to 6 Feb 2026 </figcaption>
 </figure>
 
 <br />
 
-The performance of GPTOSS-120 has improved from 260.3 toks/sec to 311 toks/sec (average score) [^] and up to 906 toks/sec (via Together.ai API test), compared to the leader propiertary model Gemini 2.5 Flash-Lite (Sep) (613 t/s) and suppressing Gemini 2.5 Flash-Lite (Aug) (499/toks/sec) in open source models.
+The performance of GPTOSS `120B` has improved from `260.3 toks/sec` [^5] to `311 toks/sec` (average score) and up to `906 toks/sec` [^6] (via Together.ai API test), following the leader proprietary model `Gemini 2.5 Flash-Lite` (Sep) (613 t/s)` and suppressing `Gemini 2.5 Flash-Lite (Aug) (499/toks/sec)`.
 
-At the article is being composed, GPTOSS ranks the 4th most popular non-proprietary models according to openRouter [^6], following DeepSeek V3.2, MiniMax M2.1 and Kimi K2.5:
+<br />
+
+At the article is being composed, GPTOSS ranks the 4th most popular non-proprietary models according to openRouter [^7], following DeepSeek V3.2, MiniMax M2.1 and Kimi K2.5:
 
 <br />
 
@@ -65,15 +67,19 @@ At the article is being composed, GPTOSS ranks the 4th most popular non-propriet
 
 <br />
 
-We summarized that three key structural improvements [^5] [^7] making it the most favrourite appetizer for agentic workflow , hence being the agentic ready model :
+We summarized that three key structural improvements [^2] [^5] making it the most favrourite appetizer for agentic workflow :
 
-- Incorporating YaRN Rotation [^8], this compact model extends the context to more than 100k length, covering all-scenario needs of agentic workflow;
+- Incorporating YaRN Rotation [^8], this compact model extends the context to more than 100k length, covering all-scenario needs of agentic workflow.
 
-- Supported an attention side project, similar to research in [^9] [^10], which involves adding `+1` to the softmax denominator. This enables the model to incorporate a learnable bias into the denominator of each attention head's softmax, allowing it to skip values at negative infinity [^9].
+- Supported an attention side project, similar to research in [^9] [^10], which involves adding `+1` to the softmax denominator.
 
-- This method employs a more aggressive `64:8` Grouped Query Attention (GQA) to improve the computational/memory access ratio.
+  This enables the model to incorporate a learnable bias into the denominator of each attention head, allowing it to skip values at negative infinity [^9].
 
-We first SFT GPTOSS BF16 model with proprietary question and awser dataset and then quantize it to MXFP4 in `week-zero` support [^11]. And then we validated pass@k scores upon fact following dataset such as `SimpleQA` and HumanEval [^14] before proceeding post training of GPTOSS with SGLang and Megatron as backends [^12] [^13] :
+- The attention method employs a more aggressive `64:8` Grouped Query Attention (GQA) to improve the computational/memory access ratio.
+
+<br />
+
+We first SFT GPTOSS BF16 model with proprietary question and awnser dataset and then quantize the `BF16` model to `MXFP4` in `week-zero` support [^11]. And then we validated pass@k scores upon fact following dataset such as `SimpleQA` and HumanEval [^14] before proceeding to post training of GPTOSS with Megatron as backends [^12] [^13] :
 
 <br/>
 
@@ -281,7 +287,7 @@ We follow this settings in VeRL to optimize our agentic workflow: labeling the f
 
 #### Decouple Inferences from Training
 
-The current VeRL system, yet support non-collocated deployment recently [^3] [^23] [^24], was orignial desiged with limited resources, a lot of logics concentraing in parameters loading/offloading to fit GPU system memory. However, when we have more than `512` GPUs for post training, everything is different:
+The current VeRL system, yet support non-collocated deployment recently [^1] [^3] [^24], was orignial desiged with limited resources, a lot of logics concentraing in parameters loading/offloading to fit GPU system memory. However, when we have more than `512` GPUs for post training, everything is different:
 
 <br />
 
@@ -1220,7 +1226,7 @@ This fully open up the possibilities of `week-zero` support post training when m
 
 [^29] DP attention explainatin : https://github.com/sgl-project/sglang/pull/18096#issuecomment-3838610683. Retrieved on 6 Feb 2026.
 
-[^30] Fix DP attention : https://github.com/sgl-project/sglang/pull/9308
+[^30] Add DP attention support for GPTOSS : https://github.com/sgl-project/sglang/pull/9308
 
 [*] AI Suggestion from ChatGPT, we seek suggestion from AI and record it honestly; GPTOSS-120b without our SFT only achieves 13% in SimpleQA dataset
 
