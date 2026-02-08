@@ -1,3 +1,12 @@
+<style>
+caption {
+  caption-side: top;
+  text-align: center;
+  padding-bottom: 10px;
+  font-weight: bold;
+}
+</style>
+
 > RLHF in VeRL before 2025.12 requires colocated deployment [^1] [^3] of inference (actor ref rollout) and training (actor in GRPO). In our experiments, large scale post training of GPTOSS [^2] with GRPO [^4] and `512` (64x8) GPU cards of `H800 DGX SupperPod`, demonstrated linear scaling of postraining of GPTOSS-20B over `64` (8x8) `H800 DGX SuperPod` GPU cards at the fixed float precision, reducing training job cost from `13` hrs (and upto 2 weeks to prepare) to `2` hrs, around `500~598` toks/sec throughput, facilitating **`week-zero`** support. Training over `16x8` GPUs, it is necessary to disable `parameters offloading` and separate nodes for inferences from those for training. And these capabilities have been supported in the lastest VeRL as we extends the results in our proprietary `Slurm` post training platform. Besides, we also explored the possibility of using low bits and ultra low bits in the last year, and finally decided to use BF16 and FP8 as our main datatype of rollout system running inside our `Slurm` post training platform.
 
 Authors : [LEI WANG](https://github.com/yiakwy-xpu-ml-framework-team) (yiakwang@ust.hk), [Bo Yan](https://github.com/iseekyan) (bayan@nvidia.com), Zhu Junqi (nickzhu@ust.hk), Guo Shengyao (guoshengyao@ust.hk), Pan Kunhao (pankunhao@gmail.com), Han Sirui (siruihan@ust.hk), Xue Wei (weixue@ust.hk)
@@ -50,11 +59,11 @@ Calling up for light weight reasoning MoE models for making tool call decisions 
 
 <br />
 
-The performance of GPTOSS `120B` has improved from `260.3 toks/sec` [^5] to `311 toks/sec` (average score) and up to `906 toks/sec` [^6] (via Together.ai API test), following the leader proprietary model `Gemini 2.5 Flash-Lite` (Sep) (613 t/s)` and suppressing `Gemini 2.5 Flash-Lite (Aug) (499/toks/sec)`.
+The performance of GPTOSS `120B` has improved from `260.3 toks/sec` [^5] to `311 toks/sec` (average score) and up to `906 toks/sec` [^6] (via Together.ai API test), following the leader proprietary model `Gemini 2.5 Flash-Lite` (Sep) (613 t/s) and suppressing `Gemini 2.5 Flash-Lite (Aug) (499/toks/sec)`.
 
 <br />
 
-At the article is being composed, GPTOSS ranks the 4th most popular non-proprietary models according to openRouter [^7], following DeepSeek V3.2, MiniMax M2.1 and Kimi K2.5:
+At the article is being composed, GPTOSS `120B` ranks the 4th most popular non-proprietary models according to `openRouter` [^7], following DeepSeek V3.2, MiniMax M2.1 and Kimi K2.5:
 
 <br />
 
@@ -79,7 +88,7 @@ We summarized that three key structural improvements [^2] [^5] making it the mos
 
 <br />
 
-We first SFT GPTOSS BF16 model with proprietary question and awnser dataset and then quantize the `BF16` model to `MXFP4` in `week-zero` support [^11]. And then we validated pass@k scores upon fact following dataset such as `SimpleQA` and HumanEval [^14] before proceeding to post training of GPTOSS with Megatron as backends [^12] [^13] :
+We first SFT GPTOSS BF16 model with proprietary question and answer dataset and quantize the model from `BF16` to `MXFP4` in `week-zero` support [^11]. And then we validated pass@k scores upon fact following dataset such as `SimpleQA` and HumanEval [^14] before proceeding to post training of GPTOSS with Megatron as backends [^12] [^13] :
 
 <br/>
 
@@ -141,13 +150,29 @@ We first SFT GPTOSS BF16 model with proprietary question and awnser dataset and 
 
 <br/>
 
-MXFP4 is used as our main rollout and deployment datatype in a non-collocated post training system for better suppor from triton kernels with reference to `One Step Off Policy`. Later I will publish an article to elabrate how and why MXFP4/NFP4 work and derived a new datatype for MoE efficiency. As for collocated system based on VeRL, we scale the postraining system with SGLang/vLLM and Megatron backends after boostraping using FP8 rollout datatype and FSDP backend.
+MXFP4 is used as our main rollout datatype in a non-collocated post training system for triton kernels.
 
-In our non-official experiments, we follow the tokenizer used by OpenAI GPTOSS and postrain the model mostly with English [^15], Candonese text-only datasets and evaluate mainly on MMLU Pro ,CMMLU and SWE-bench verified. Unlike `ModelSpec` used by OpenAI, our objectives of postraining expriemnt is specifically designed for decisions making such as tools calling, reasoning efforts deduction, user intention judging and context retrieving within agentic workflow.
+<br />
+
+Later I will publish an article to elabrate how and why MXFP4/NFP4 work and derived a new datatype for MoE efficiency.
+
+<br />
+
+As for collocated system such as VeRL, we scale the postraining system with SGLang/vLLM and Megatron backends after boostraping using FP8 rollout datatype with FSDP backend.
+
+<br />
+
+In our non-official experiments, we follow the tokenizer used by OpenAI GPTOSS and postrain the model mostly with English [^15], Candonese text-only datasets and evaluate mainly on MMLU Pro, CMMLU and SWE-bench verified.
+
+<br />
+
+Unlike `ModelSpec` used by OpenAI, our objectives of postraining expriment are specifically designed for decisions making, such as tools calling, **reasoning efforts deduction**, **user intention detection** and context retrieving within agentic workflow.
 
 #### Related Models
 
-Though we postraining models over GPTOSS, there are plentfy of small and flash models designed sepecifically for **agentic workflow** catching up attentions recently. I would take this opportunity to remind you , it is not only about size, but also about objectives I mentioned above.
+Besides GPTOSS, there are other small and flash models designed sepecifically for **agentic workflow**, catching up with attentions recently. I would like take this opportunity to remind the reader, that
+
+> it is not only about size, but also about objectives we mentioned above.
 
 ###### Qwen3-next-coder
 
