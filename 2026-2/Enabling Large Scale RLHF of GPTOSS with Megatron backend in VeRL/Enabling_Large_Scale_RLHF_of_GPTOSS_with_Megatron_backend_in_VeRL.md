@@ -88,7 +88,7 @@ We summarized that **three key structural improvements** [^2] [^5] making it the
 
 <br />
 
-We first SFT GPTOSS BF16 model with proprietary question and answer dataset and quantized the model from `BF16` to `MXFP4` in `week-zero` support [^11]. Then we validated pass@k scores upon fact following dataset such as `SimpleQA` and HumanEval [^14] before proceeding to post training of GPTOSS with Megatron as backends [^12] [^13] :
+We first SFT GPTOSS BF16 model with proprietary question and answer dataset and quantized the model from `BF16` to `MXFP4` in `week-zero` support [^11]. Then we validated **pass@k** scores upon fact following dataset such as `SimpleQA` and HumanEval [^14] before proceeding to post training of GPTOSS with Megatron as backends [^12] [^13] :
 
 <br/>
 
@@ -178,13 +178,19 @@ Besides GPTOSS, there are other small and flash models designed sepecifically fo
 
 **Qwen3-Coder-Next** is based on **Qwen3-Next-80B-A3B-Base**, and an open-weight language model engineered for coding agents and even longer context.
 
+<br />
+
 Previously GPTOSS 120b achieved `76.3%` in SWE-bench verified [^17] versus maximum (turning on multi-rounds search to gather contexts) of `74.8%`, demonstrating our choosing of GPTOSS-120b as appetizer model in text tasks. However, the objective of Qwen3-Coder-Next [^18] is emphasized on tool calling and `recovery from execution failures` making it suitable for agentic workflow for coding and its usage of hybrid attention, aka `Gated DeltaNet` or `linear attention` and `Gated GQA`, extends context length significantly from `100K` to `256K`.
 
 ###### Step-3_5-Flash
 
 **Step-3_5_Flash** activates `11B` parameters, almost `double of that of GPT-120b-OSS`, and achieved `74.4%` score in SWE-bench verfied [^19] slightly lower than GPT-OSS-120b as `Qwen3-next-coder`. As for Tau-bench dataset, **Step-3_5_Flash** performances (`88.2%`) [^19] significantly better than gptoss (`67.8%`).
 
+<br />
+
 Both `Step_3_5_Flash` and `Qwen3-Coder-next` employs hybrid attention modes to extend contexts. Instead of alternating between `Gated GQA` and linear attention, attentions of `Step_3_5_Flash`, alternates using of sliding windows [^19].
+
+<br />
 
 The objective `Step_3_5_Flash` is more general in agentic workflow than Qwen3-Coder-Next, making it more suitable for agentic tasks, a perfect example that the model which is `better than` GPTOSS, is also `larger than` GPTOSS, calling GPTOSS appetizer.
 
@@ -196,15 +202,54 @@ GPTOSS has been quickly supported with `FSDP` and was recorded with `650 sec/ste
 
 <br/>
 
-For example, we already enabled continuous training of GPTOSS over Megatron [^12] with protierary datasets and it facilitates of TP8 EP8 configuration for GPTOSS 20B with around `10` GB per GPU in a single node and more flexible partition schemes in multi-nodes continous training.
+For example, we already enabled continuous training of GPTOSS over **Megatron** [^12] with protierary datasets and it facilitates of TP8 EP8 configuration for GPTOSS 20B with around `10` GB per GPU in a single node and more flexible partition schemes in multi-nodes continous training.
 
 <br/>
 
-The naive idea is that by ustilizing flexible partition schemes of Megatron, we can lower memory used per GPU during rollout and training, and finally disable parameters offloading in post training, which significantly redcues our efficiency of training.
+The naive idea is that by ustilizing flexible partition schemes of **Megatron***, we can lower memory used per GPU during rollout and training, and finally disable parameters offloading in post training, which significantly redcues our efficiency of training.
 
 <br/>
 
-The initial estimation of `EP` (`EDP`) for GPTOSS-120b (32 experts) and GPTOSS-20b to be `4` and `3` respectively. With `PP` (`VPP`) we can further increase the throughput and finally reduced our training jobs from `13` hrs to `9` with throughput more than `596 toks/sec`. More details can be found in section of (`main experiment`)[#main-experiment].
+The initial estimation of `EP` (`EDP`) for GPTOSS-120b (32 experts) and GPTOSS-20b to be `4x8` and `3x8` respectively. With `PP` (`VPP`) we can further increase the throughput and finally reduced our training jobs from `13` hrs to `9` with throughput more than `596 toks/sec`. More details can be found in section of (`main experiment`)[#main-experiment].
+
+<br />
+
+Since `LLM` mainly [^31] uses **Auto Regressive** model architecture for parllel predicting of next words during training with `shift-one-word` loss, it is possible to keep `Megatron Core`, aka `mcore` unchanged, and use a light-weight layer to deal with model specification to store to distributed checkpoint and load from huggingface or safetensors format.
+
+<br />
+
+This layer is now called `Megatron-Bridge`. Currently there are two branches of `Megatron Bridge`. One is the old version maintained by `CN` team called `vallina_mbridge` in VeRL, and the other is the branch maintained by U.S. team. We toggle with `vanilla_mbridge` variable :
+
+```bash
+# ...
+# Actor Common
+ACTOR_PARALLEL="
+    actor_rollout_ref.actor.megatron.use_mbridge=True \
+    actor_rollout_ref.actor.megatron.vanilla_mbridge=False \
+    # ...
+"
+# ...
+```
+
+Traditional way of using Megatron consists of two pre calculation steps:
+
+- Generating distributed checkpoint
+- Blending dataset with the tokenizer either with INT32 or INT16 datatype [^32]
+
+<br />
+
+In VeRL we enable quick loading and both online and offline generation of distributed checkpoint via `Megatron-Bridge`:
+
+```bash
+if [ "$use_dist_ckpt" -eq 1 ]; then
+TRAINER_EXT=(
+    actor_rollout_ref.actor.megatron.dist_checkpointing_path=${MEGATRON_DIST_CKPT_MODEL_DIR}
+    actor_rollout_ref.ref.megatron.dist_checkpointing_path=${MEGATRON_DIST_CKPT_MODEL_DIR}
+    actor_rollout_ref.actor.megatron.use_dist_checkpointing=True
+    actor_rollout_ref.ref.megatron.use_dist_checkpointing=True
+)
+fi
+```
 
 <br />
 
@@ -227,9 +272,7 @@ The reward at each token is clipped surrogate objective function [^20] or a line
 
 <br/>
 
-
 $$surrogate\ loss\ L\ at\ tok\ i = min(r_{\theta} * A, clip(r_{\theta}) * A)$$
-
 
 <br/>
 
@@ -312,6 +355,8 @@ losses = -torch.min(surrogate1, surrogate2)  # [batch, seq_len]
 loss = losses.mean()
 ```
 
+<br />
+
 We follow this settings in VeRL to optimize our agentic workflow: labeling the favored answers, instructing LLM and enoding the outputs of the agentic workflow decisions at specific positions before calculating its per-token loss.
 
 #### Decouple Inferences from Training
@@ -388,6 +433,7 @@ We support two modes of using Megatron. One can generate distribute checkpoint f
 
 What is worthy of noted is that Megatron disributed fwd has supported KV Cache:
 
+<div>
 <details>
 
 <summary>clock to open Distributed Megatron fwd with KV cache </summary>
@@ -423,7 +469,6 @@ from megatron.core import parallel_state as mpu
 from megatron.core.tensor_parallel.random import model_parallel_cuda_manual_seed
 
 from megatron.core.inference_params import InferenceParams
-# from megatron.core.inference_context import InferenceContext
 
 import torch
 import torch.distributed as dist
@@ -545,7 +590,6 @@ def text_forward_step(data_iterator, model, inference_params=None, inference_con
         "attention_mask": batch.get("attention_mask", None),
         "inference_params": inference_params,
         "runtime_gather_output": True,
-        # "inference_context": inference_context,
     }
 
     def loss_func(x, **kwargs):
@@ -576,7 +620,6 @@ def export(checkpoint=True):
     model = provider.provide_distributed_model(wrap_with_ddp=False)
 
     for m in model:
-        # assert isinstance(m, GPTModel)
         enable_runtime_gather_output(m)
 
     # output info
@@ -608,7 +651,6 @@ def _verify_tokenizer_and_hfmodel(hf_tokenizer, model):
     print(f"prompts : {prompts}, type : {type(prompts)}")
     print("*******************************************")
 
-    # model_inputs = hf_tokenizer([prompts], return_tensors="pt").to(model.device)
     model_inputs = hf_tokenizer(texts, return_tensors="pt").to(model.device)
 
     outputs_ids = model.generate(**model_inputs, max_new_tokens=16)
@@ -760,6 +802,7 @@ if __name__ == "__main__":
 ```
 
 </details>
+</div>
 
 ## Main Experiment
 
@@ -771,8 +814,12 @@ Our slurm system has 1 head node and 64 computing nodes. It does not alows direc
 
 By default, MPI uses `SSH` to construct control plane. In this system, we use `pml` and `openmpi` with `Slurm` and `pml` support to make sure IP/TCP communication is used instead of `SSH` to build control plane:
 
+<details>
+
+<summary>clock to open Slurm job submitter </summary>
+
 ```bash
-...
+# ...
 # get node info
 nodes=$(scontrol show hostnames "$SLURM_JOB_NODELIST")
 nodes_list=($nodes)
@@ -783,7 +830,7 @@ head_node_ip=$(srun --nodes=1 --ntasks=1 -w "$head_node" hostname --ip-address)
 # export master address for FSDP/NCCL
 export MASTER_ADDR=$head_node_ip
 export MASTER_PORT=6500
-...
+# ...
 
 # create image
 echo "create container ..."
@@ -799,7 +846,7 @@ else
         echo \"[ \$(hostname) ] Container '$CONTAINER_NAME' already exists.\"
 fi
 "
-...
+# ...
 
 echo "JOB#${SLURM_JOB_ID} start into the container ..."
 
@@ -818,9 +865,15 @@ echo "=== job finished ==="
 echo "Done: $(date)"
 ```
 
+</details>
+
 <br />
 
 After verifiction simple all reduction functions well, we use `Ray` for multinodes training :
+
+<details>
+
+<summary>clock to open Ray Job Submitter </summary>
 
 ```bash
 export MASTER_ADDR=${MASTER_ADDR:-$this_addr}
@@ -914,6 +967,8 @@ else
 fi
 ```
 
+</details>
+
 <br />
 
 <figure>
@@ -924,7 +979,6 @@ fi
 </figure>
 
 <br />
-
 
 #### Common Basic Config
 
@@ -943,7 +997,7 @@ DATA="
     +data.apply_chat_template_kwargs.reasoning_effort=medium \
 "
 
-# Actor common
+# Actor Common
 ACTOR_GRAD_PARAM_OFFLOAD="
     actor_rollout_ref.actor.megatron.grad_offload=$offload \
 "
@@ -1003,7 +1057,7 @@ ACTOR="
 "
 ```
 
-Since we are using Megatron as backend, some functions such recompute, kernels with communication overllap is immedaitely into use :
+Since we are using Megatron as backend, some functions such as recompute, communication overlap are immediately put into use :
 
 ```
 # Actor - Megatron backend
@@ -1029,7 +1083,7 @@ MAGATRON_MEM_OPT="
 "
 ```
 
-Rollout before 2025.12 has configuration of :
+Rollout before 2025.12 was configured with :
 
 ```
 ROLLOUT=(
@@ -1064,20 +1118,20 @@ ROLLOUT_REF="
 "
 ```
 
-We added some new paramters after 2026.1 to faciliate one step off policy training cross massive nodes more efficiently:
+We added some new paramters after `2026.1` to faciliate `one step off policy` training cross massive nodes more efficiently:
 
 ```bash
 ROLLOUT=(
-...
+# ...
     actor_rollout_ref.rollout.quantization=${quant_dtype}
     actor_rollout_ref.rollout.expert_parallel_size=$gptoss_rollout_tp_size
     actor_rollout_ref.rollout.nnodes=1
     actor_rollout_ref.rollout.n_gpus_per_node=4
-...
+# ...
 )
 ```
 
-Combining them together. Before 2025.12, we use in head node:
+Combining them together, before 2025.12, training script is configured in head node as:
 
 ```bash
 HYDRA_FULL_ERROR=1 python3 -m verl.trainer.main_ppo \
@@ -1095,7 +1149,7 @@ HYDRA_FULL_ERROR=1 python3 -m verl.trainer.main_ppo \
     trainer.critic_warmup=0 \
     trainer.logger='["console","wandb"]' \
     trainer.project_name='verl_grpo_nnodes_example_gsm8k_math' \
-    trainer.experiment_name='yiakwy-verl-megatron-vllm-0.5.5-bench' \
+    trainer.experiment_name='yiakwy-verl-megatron-vllm-0.11-sgl-0.5.5-bench' \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes=$NNODES \
     trainer.val_before_train=False \
@@ -1107,12 +1161,12 @@ HYDRA_FULL_ERROR=1 python3 -m verl.trainer.main_ppo \
 
 ```
 
-After 2026.1, we suggest `one step off policy` asynchronous main ppo loop as starter :
+After 2026.1, we suggest to use `one step off policy` asynchronous main ppo loop as starter :
 
 ```bash
-...
+# ...
 HYDRA_FULL_ERROR=1 python3 -m verl.experimental.one_step_off_policy.async_main_ppo \
-...
+# ...
 ```
 
 #### Envrionmental Variables
@@ -1122,6 +1176,57 @@ Not too much , but just pay attention to the size of `RAY_TMPDIR`.
 #### Tunning Parameters
 
 Tuning parameters is straight forward, we setup rollout parallel and identified `TP4` without `data parallel attention` is most suitable [^29] [^30]:
+
+**Data**
+
+```bash
+## Data
+train_batch_size=$((64 * NNODES))
+ppo_mini_batch_size=$((32 * NNODES))
+```
+
+**Train Model Partition**
+
+```bash
+# Megatron
+
+# Nx8 H100/H800 (80GB)
+NNODES=${NNODES:-2}
+PP=${PP:-$NNODES}
+TP=${TP:-8}
+EP=${EP:-8}
+CP=${CP:-1}
+
+ETP=${ETP:-1}
+
+if [ "$TP" -eq 1 ]; then
+SP=False
+else
+SP=${SP:-True}
+fi
+
+ref_cpu_offload=False
+actor_opt_cpu_offload=False
+
+# training efficiency, sampling from (2, 4, 8, 16, ...)
+ppo_micro_batch_size_per_gpu=4
+```
+
+**Rollout Model Partition**
+
+```bash
+# rollout model partitions
+gptoss_rollout_tp_size=4
+
+# sampling size
+n_resp_per_prompt=16
+
+# rollout MBS recorded in the report, sampling (4, 8, 16, ...)
+micro_batch_size_per_gpu=8
+
+ROLLOUT_EAGER=False
+ROLLOUT_FREE_CACHE=False
+```
 
 <br />
 
@@ -1136,7 +1241,11 @@ Tuning parameters is straight forward, we setup rollout parallel and identified 
 
 Then we proceed to megatron optimzation.
 
+<br />
+
 Since we are using `H800 SuperPOD`, we would like to recompute to facilite computing time for IO cost. This should also work for `GB300 SuperPOD` where 1000 TFLOPS achieved and exposes a very steep compute intensity ratio in roofline model, we will verify this concept in a near future.
+
+<br />
 
 Based on our empirical experienceds prefer to try PP (VPP) first, then distribute experts evenly to all the cards available. For example if we have 4 nodes, we can distribute experts to maximum 16 GPU cards if PP = 2 and maximum of 32 cards if PP = 1.
 
@@ -1199,7 +1308,7 @@ By tuning over several paremters we got maximum throughput of 598 toks/sec and r
 
 ## Conclusion
 
-We verfied linearing scaling capability of Post Trianing from tiny scale to middle scale when parameters offloading fully disabled and decoupling inference from training is secured, reducing a `13` training jobs to `2` hrs.
+We verfied linearly scaling capability of post training from tiny scale to middle scale when parameters offloading fully disabled and decoupling inference from training is secured, reducing a `13` training jobs to `2` hrs.
 
 This fully open up the possibilities of `week-zero` support post training when more and more open-weight models are released.
 
@@ -1249,7 +1358,7 @@ This fully open up the possibilities of `week-zero` support post training when m
 
 [^22] GRPO math in VeRL : https://verl.readthedocs.io/en/latest/algo/rollout_corr_math.html. Retrieved on 6 Feb 2026.
 
-[^23] One Step Off Policy Async Trainer : https://github.com/verl-project/verl/tree/main/verl/experimental/one_step_off_policy. Retrieved on 6 Feb 2026.
+[^23] One Step Off Policy Async Trainer Tutorial : https://verl.readthedocs.io/en/latest/advance/one_step_off.html. Retrieved on 6 Feb 2026.
 
 [^24] Megatron RL : https://github.com/NVIDIA-NeMo/RL/discussions/1161. Retrieved on 6 Feb 2026.
 
@@ -1257,13 +1366,17 @@ This fully open up the possibilities of `week-zero` support post training when m
 
 [^26] FP8 Support in VeRL : https://github.com/verl-project/verl/issues/4641, Retrieved on 6 Feb 2026.
 
-[^27] verl support block-wise fp8 scale : https://github.com/verl-project/verl/blame/06449b8bb9f1896d58f8e3f5739a55bb72005166/verl/utils/vllm/vllm_fp8_utils.py#L118, https://github.com/verl-project/verl/commit/597b63faef07b4a819356ef497c0e29e4fd86226
+[^27] VeRL support block-wise fp8 scale : https://github.com/verl-project/verl/blame/06449b8bb9f1896d58f8e3f5739a55bb72005166/verl/utils/vllm/vllm_fp8_utils.py#L118, https://github.com/verl-project/verl/commit/597b63faef07b4a819356ef497c0e29e4fd86226
 
 [^28] vllm fused moe triton kerenel uses quant_block_size as kernel block size : https://github.com/vllm-project/vllm/blob/ab10d798555ee3611f82e71cbe573086fb92a4ed/vllm/model_executor/layers/fused_moe/fused_moe.py#L1558. Retrieved on 6 Feb 2026.
 
 [^29] DP attention explainatin : https://github.com/sgl-project/sglang/pull/18096#issuecomment-3838610683. Retrieved on 6 Feb 2026.
 
 [^30] Add DP attention support for GPTOSS : https://github.com/sgl-project/sglang/pull/9308
+
+[^31] Diffusion-LM Improves Controllable Text Generation,  ,https://arxiv.org/pdf/2205.14217. Retrieved on 10 Feb.
+
+[^32] Blending dataset with INT16, yiakwy, https://github.com/NVIDIA/Megatron-LM/pull/604
 
 [*] AI Suggestion from ChatGPT, we seek suggestion from AI and record it honestly; GPTOSS-120b without our SFT only achieves 13% in SimpleQA dataset
 
