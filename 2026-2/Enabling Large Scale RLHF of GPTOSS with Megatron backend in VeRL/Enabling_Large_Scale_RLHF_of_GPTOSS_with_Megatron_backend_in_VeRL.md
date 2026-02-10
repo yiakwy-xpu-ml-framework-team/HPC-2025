@@ -7,9 +7,9 @@ caption {
 }
 </style>
 
-> RLHF in VeRL before 2025.12 requires colocated deployment [^1] [^3] of inference (actor ref rollout) and training (actor in GRPO). In our experiments, large scale post training of GPTOSS [^2] with GRPO [^4] and `512` (64x8) GPU cards of `H800 DGX SupperPod`, demonstrated linear scaling of postraining of GPTOSS-20B over `64` (8x8) `H800 DGX SuperPod` GPU cards at the fixed float precision, reducing training job cost from `13` hrs (and upto 2 weeks to prepare) to `2` hrs, around `500~598` toks/sec throughput, facilitating **`week-zero`** support. Training over `16x8` GPUs, it is necessary to disable `parameters offloading` and separate nodes for inferences from those for training. And these capabilities have been supported in the lastest VeRL as we extends the results in our proprietary `Slurm` post training platform. Besides, we also explored the possibility of using low bits and ultra low bits in the last year, and finally decided to use BF16 and FP8 as our main datatype of rollout system running inside our `Slurm` post training platform.
+> RLHF in VeRL before 2025.12 requires colocated deployment [^1] [^3] of inference (actor ref rollout) and training (actor in GRPO). In our experiments, large scale post training of GPTOSS [^2] with GRPO [^4] and `512` (64x8) GPU cards of `H800 DGX SupperPod`, demonstrated linear scaling of postraining of GPTOSS-20B over `64` (8x8) `H800 DGX SuperPod` GPU cards at the fixed float precision, reducing training job cost from `13` hrs to `2` hrs, around `500~598` toks/sec throughput and `108.62 s/it`, facilitating **`week-zero`** support. Training over `16x8` GPUs, it is necessary to disable `parameters offloading` and separate nodes for inference from those for training. And these capabilities have been supported in the lastest VeRL as we extend the results in our proprietary `Slurm` post training platform. Besides, we also explored possibilities of using low bits and ultra low bits in the last year to reduce TP/EP parallel for post training efficiency, and finally decided to use BF16 and FP8 as our main datatype of rollout system running inside our `Slurm` post training platform.
 
-Authors : [LEI WANG](https://github.com/yiakwy-xpu-ml-framework-team) (yiakwang@ust.hk), [Bo Yan](https://github.com/iseekyan) (bayan@nvidia.com), Zhu Junqi (nickzhu@ust.hk), Guo Shengyao (guoshengyao@ust.hk), Pan Kunhao (pankunhao@gmail.com), Han Sirui (siruihan@ust.hk), Xue Wei (weixue@ust.hk)
+Authors : [LEI WANG](https://github.com/yiakwy-xpu-ml-framework-team) (yiakwang@ust.hk), [Bai Yan](https://github.com/iseekyan) (bayan@nvidia.com), Zhu Junqi (nickzhu@ust.hk), Guo Shengyao (guoshengyao@ust.hk), Pan Kunhao (pankunhao@gmail.com), Han Sirui (siruihan@ust.hk), Xue Wei (weixue@ust.hk)
 
 ## Contents
 
@@ -37,7 +37,7 @@ Authors : [LEI WANG](https://github.com/yiakwy-xpu-ml-framework-team) (yiakwang@
 
 #### GPTOSS Appetizers : Art of Balance of Performance, Affordability and Speed
 
-Calling up for light weight reasoning MoE models for making tool call decisions in an agentic workflow, particularly with activated parameters of sizes ranging from `3B` to `5B`, has been roaring up since DeepSeek V3 and V3.1. Recorded in `Aug 5 2025`, GPTOSS `20B` achieved `409` toks/sec to be the most fast agentic ready open model in Artifical Analysis Leaderboard [^5], and GPTOSS `120B` is still the most fast open model as composing this article [^6]:
+Calling up for light weight reasoning MoE models for making tool call decisions in an agentic workflow, particularly with activated parameters of sizes ranging from `3B` to `5B`, has been roaring up since DeepSeek `V3` and `V3.1`. Recorded in `Aug 5 2025`, GPTOSS `20B` achieved `409` toks/sec to be the most fast agentic ready open-weight model in **Artifical Analysis Leaderboard** [^5], and GPTOSS `120B` is still the fastest open-weight model as composing this article [^6]:
 
 <br />
 
@@ -45,7 +45,7 @@ Calling up for light weight reasoning MoE models for making tool call decisions 
 <p align="center">
 <img src="assets/img/gptoss-20b-6-Aug-2025.png" alt="gptoss-20b-6-Aug-2025" style="width:120%">
 </p>
-<figcaption style="text-align:center">GPTOSS 20b chieved the most fast open model on Aug 6 2025</figcaption>
+<figcaption style="text-align:center">GPTOSS 20b chieved the most fast open-weight model on Aug 6 2025</figcaption>
 </figure>
 
 <br />
@@ -54,12 +54,12 @@ Calling up for light weight reasoning MoE models for making tool call decisions 
 <p align="center">
 <img src="assets/img/gptoss-120b-6-Feb-2026.png" alt="gptoss-120b-6-Feb-2026" style="width:120%">
 </p>
-<figcaption style="text-align:center">GPTOSS 120b keep the most fast open model from Aug 6 2025 to 6 Feb 2026 </figcaption>
+<figcaption style="text-align:center">GPTOSS 120b keep the most fast open-weight model from Aug 6 2025 to 6 Feb 2026 </figcaption>
 </figure>
 
 <br />
 
-The performance of GPTOSS `120B` has improved from `260.3 toks/sec` [^5] to `311 toks/sec` (average score) and up to `906 toks/sec` [^6] (via Together.ai API test), following the leader proprietary model `Gemini 2.5 Flash-Lite` (Sep) (613 t/s) and suppressing `Gemini 2.5 Flash-Lite (Aug) (499/toks/sec)`.
+The performance of GPTOSS `120B` has improved from `260.3 toks/sec` [^5] to `311 toks/sec` (average score) and up to `906 toks/sec` [^6] (via latest Together.ai API test), either following closely or suppressing the leading proprietary model `Gemini 2.5 Flash-Lite` (Sep) (613 t/s) and `Gemini 2.5 Flash-Lite` (Aug) (499 t/s).
 
 <br />
 
@@ -76,7 +76,7 @@ At the article is being composed, GPTOSS `120B` ranks the 4th most popular non-p
 
 <br />
 
-We summarized that three key structural improvements [^2] [^5] making it the most favrourite appetizer for agentic workflow :
+We summarized that **three key structural improvements** [^2] [^5] making it the most favourite appetizer for agentic workflow as approaching `Pareto Frontier` composed of accuracy and speed:
 
 - Incorporating YaRN Rotation [^8], this compact model extends the context to more than 100k length, covering all-scenario needs of agentic workflow.
 
@@ -88,7 +88,7 @@ We summarized that three key structural improvements [^2] [^5] making it the mos
 
 <br />
 
-We first SFT GPTOSS BF16 model with proprietary question and answer dataset and quantize the model from `BF16` to `MXFP4` in `week-zero` support [^11]. And then we validated pass@k scores upon fact following dataset such as `SimpleQA` and HumanEval [^14] before proceeding to post training of GPTOSS with Megatron as backends [^12] [^13] :
+We first SFT GPTOSS BF16 model with proprietary question and answer dataset and quantized the model from `BF16` to `MXFP4` in `week-zero` support [^11]. Then we validated pass@k scores upon fact following dataset such as `SimpleQA` and HumanEval [^14] before proceeding to post training of GPTOSS with Megatron as backends [^12] [^13] :
 
 <br/>
 
@@ -150,7 +150,7 @@ We first SFT GPTOSS BF16 model with proprietary question and answer dataset and 
 
 <br/>
 
-MXFP4 is used as our main rollout datatype in a non-collocated post training system for triton kernels.
+`MXFP4` is used as our main rollout datatype in a non-collocated post training system for triton kernels.
 
 <br />
 
@@ -158,41 +158,45 @@ Later I will publish an article to elabrate how and why MXFP4/NFP4 work and deri
 
 <br />
 
-As for collocated system such as VeRL, we scale the postraining system with SGLang/vLLM and Megatron backends after boostraping using FP8 rollout datatype with FSDP backend.
+As for collocated system such as **VeRL**, we scale the postraining system with SGLang/vLLM and Megatron backends after boostraping using FP8 rollout datatype with FSDP backend.
 
 <br />
 
-In our non-official experiments, we follow the tokenizer used by OpenAI GPTOSS and postrain the model mostly with English [^15], Candonese text-only datasets and evaluate mainly on MMLU Pro, CMMLU and SWE-bench verified.
+In our non-official experiments, we follow the tokenizer used by OpenAI GPTOSS and postrained the model mostly with English [^15], Candonese text-only datasets and evaluated mainly on MMLU Pro, CMMLU and SWE-bench verified.
 
 <br />
 
-Unlike `ModelSpec` used by OpenAI, our objectives of postraining expriment are specifically designed for decisions making, such as tools calling, **reasoning efforts deduction**, **user intention detection** and context retrieving within agentic workflow.
+Unlike `ModelSpec` used by OpenAI, our **objectives** of postraining expriment are specifically designed for decisions making, such as tools calling, **reasoning efforts deduction**, **user intention detection** and context retrieving within agentic workflow.
 
 #### Related Models
 
-Besides GPTOSS, there are other small and flash models designed sepecifically for **agentic workflow**, catching up with attentions recently. I would like take this opportunity to remind the reader, that
+Besides GPTOSS, there are other small and flash models designed sepecifically for **agentic workflow**, catching up with attentions recently. I would like to take this opportunity to remind the readers, that
 
 > it is not only about size, but also about objectives we mentioned above.
 
 ###### Qwen3-next-coder
 
-Qwen3-Coder-Next is based on Qwen3-Next-80B-A3B-Base, and an open-weight language model engineered for coding agents and even longer context.
+**Qwen3-Coder-Next** is based on **Qwen3-Next-80B-A3B-Base**, and an open-weight language model engineered for coding agents and even longer context.
 
-Previously GPTOSS 120b achieved `76.3%` in SWE-bench verified [^17] versus maximum (turning on multi-rounds search to gather contexts) of `74.8%`, demonstrating our choosing of GPTOSS-120b as appetizer model in text tasks. However, the objective of Qwen3-Coder-Next [^18] is emphasized on tool calling and `recovery from execution failures` makes it suitable for agentic workflow for coding and its usage of hybrid attention, aka `Gated DeltaNet` or `linear attention` and `Gated GQA`, extends context length significantly from 100K to 256K.
+Previously GPTOSS 120b achieved `76.3%` in SWE-bench verified [^17] versus maximum (turning on multi-rounds search to gather contexts) of `74.8%`, demonstrating our choosing of GPTOSS-120b as appetizer model in text tasks. However, the objective of Qwen3-Coder-Next [^18] is emphasized on tool calling and `recovery from execution failures` making it suitable for agentic workflow for coding and its usage of hybrid attention, aka `Gated DeltaNet` or `linear attention` and `Gated GQA`, extends context length significantly from `100K` to `256K`.
 
 ###### Step-3_5-Flash
 
-Step-3_5_Flash activate 11 B parameters, almost double of that of GPT-120b-OSS, and achieved `74.4%` score in SWE-bench verfied [^19] slightly lower than GPT-OSS-120b as `Qwen3-next-coder`. As for Tau-bench dataset, Step-3_5_Flash performances (`88.2%`) [^19] significantly better than gptoss (67.8%).
+**Step-3_5_Flash** activates `11B` parameters, almost `double of that of GPT-120b-OSS`, and achieved `74.4%` score in SWE-bench verfied [^19] slightly lower than GPT-OSS-120b as `Qwen3-next-coder`. As for Tau-bench dataset, **Step-3_5_Flash** performances (`88.2%`) [^19] significantly better than gptoss (`67.8%`).
 
-Both `Step_3_5_Flash` and `Qwen3-Coder-next` employs hybrid attention modes to extend context. Instead of alternating between `Gated GQA` and linear attention, attention of each layer, alternates using of sliding windows [^19].
+Both `Step_3_5_Flash` and `Qwen3-Coder-next` employs hybrid attention modes to extend contexts. Instead of alternating between `Gated GQA` and linear attention, attentions of `Step_3_5_Flash`, alternates using of sliding windows [^19].
 
-The objective `Step_3_5_Flash` is more general in agentic workflow than Qwen3-Coder-Next, making it more suitable for agentic tasks and a perfect example that the model which is better than GPTOSS, is also larger (double activation parameters) than GPTOSS, calling GPTOSS appetizer.
+The objective `Step_3_5_Flash` is more general in agentic workflow than Qwen3-Coder-Next, making it more suitable for agentic tasks, a perfect example that the model which is `better than` GPTOSS, is also `larger than` GPTOSS, calling GPTOSS appetizer.
 
 ## Related Works
 
 #### Solution Bundle : VeRL, vLLM/SGLang, FSDP, Megatron-Core, Megatron-Bridge。
 
-GPTOSS has been quickly supported with `FSDP` and was recorded with `650 sec/step`, since `FSDP` is not a perfect choice for Expert Parallel. For example, we already enabled continuous training of GPTOSS over Megatron [^12] with protierary datasets and it facilitates of TP8 EP8 configuration for GPTOSS 20B with around `10` GB per GPU in a single node and more flexible partition schemes in multi-nodes continous training.
+GPTOSS has been quickly supported with `FSDP` and was recorded with `650 sec/step`, since `FSDP` is not a perfect choice for Expert Parallel.
+
+<br/>
+
+For example, we already enabled continuous training of GPTOSS over Megatron [^12] with protierary datasets and it facilitates of TP8 EP8 configuration for GPTOSS 20B with around `10` GB per GPU in a single node and more flexible partition schemes in multi-nodes continous training.
 
 <br/>
 
@@ -383,6 +387,10 @@ We support two modes of using Megatron. One can generate distribute checkpoint f
 <br />
 
 What is worthy of noted is that Megatron disributed fwd has supported KV Cache:
+
+<details>
+
+<summary>clock to open Distributed Megatron fwd with KV cache </summary>
 
 ```python
 import numpy as np
@@ -750,6 +758,8 @@ if __name__ == "__main__":
         if torch.distributed.is_initialized():
             torch.distributed.destroy_process_group()
 ```
+
+</details>
 
 ## Main Experiment
 
@@ -1135,6 +1145,7 @@ Based on our empirical experienceds prefer to try PP (VPP) first, then distribut
 <p>
 <figcaption style="text-align:center"> Post training warm up </figcaption>
 </p>
+
 | NNodes | TP(ROLL_OUT) | TP | EP | PP | CP | BS | MBS (rollout) | Seq (max_response_length) | Rollout backend | Training backend | offload (actor\ref) | Throughput (tokens/sec) | Sec / iter (s/it) |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | 1 | 8 | 8 | 8 | 1 | 1 | 64 | 4 | 1024 | vllm | Megatron | TRUE | 60 | 160 |
@@ -1151,6 +1162,7 @@ Fully turning off parameters offloading is not trival. After scaling to 4 nodes,
 <p>
 <figcaption style="text-align:center"> Main experiment snapshot </figcaption>
 </p>
+
 | NNodes | TP(ROLL_OUT) | TP | EP | PP | CP | BS | MBS (rollout) | Seq (max_response_length) | Rollout backend | Training backend | offload (actor\ref) | Throughput (tokens/sec) | Sec / iter (s/it) | Note |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | 4 | 4 | 4 | 8 | 2 | 1 | 256 | 8 | 1024 | vllm | Megatron | TRUE | 104.79 | 128.36 | 5% |
@@ -1189,7 +1201,7 @@ By tuning over several paremters we got maximum throughput of 598 toks/sec and r
 
 We verfied linearing scaling capability of Post Trianing from tiny scale to middle scale when parameters offloading fully disabled and decoupling inference from training is secured, reducing a `13` training jobs to `2` hrs.
 
-This fully open up the possibilities of `week-zero` support post training when more and more open source models are released.
+This fully open up the possibilities of `week-zero` support post training when more and more open-weight models are released.
 
 ## Reference
 
