@@ -196,9 +196,18 @@ The objective `Step_3_5_Flash` is more general in agentic workflow than Qwen3-Co
 
 ## Related Works
 
-#### Solution Bundle : VeRL, vLLM/SGLang, FSDP, Megatron-Core, Megatron-Bridge。
+#### Solution Bundle : VeRL, vLLM/SGLang, FSDP, TE, Megatron-Core, Megatron-Bridge。
 
 GPTOSS has been quickly supported with `FSDP` and was recorded with `650 sec/step`, since `FSDP` is not a perfect choice for Expert Parallel.
+
+<br/>
+
+<figure>
+<p align="center">
+<img src="assets/img/fsdp_single_node_cold_start.png" alt="fsdp_single_node_cold_start" style="width:120%">
+</p>
+<figcaption style="text-align:center">FSDP Single Node Cold Start </figcaption>
+</figure>
 
 <br/>
 
@@ -215,6 +224,15 @@ The initial estimation of `EP` (`EDP`) for GPTOSS-120b (32 experts) and GPTOSS-2
 <br />
 
 Since `LLM` mainly [^31] uses **Auto Regressive** model architecture for parllel predicting of next words during training with `shift-one-word` loss, it is possible to keep `Megatron Core`, aka `mcore` unchanged, and use a light-weight layer to deal with model specification to store to distributed checkpoint and load from huggingface or safetensors format.
+
+<br />
+
+<figure>
+<p align="center">
+<img src="assets/img/fsdp_vs_megatron.png" alt="fsdp_vs_megatron" style="width:120%">
+</p>
+<figcaption style="text-align:center"> FSDP vs Megatron </figcaption>
+</figure>
 
 <br />
 
@@ -261,6 +279,12 @@ fi
 </figure>
 
 <br />
+
+Computation upon padding tokens was a serious problem in training. `THD` was supported in Megatron and added into VeRL in April 2025 to elimintate computational wast on padding tokens [^33]. Dynamic batch is an another important feature in Megatron backend and added to VeRL to balance workload [^34].
+
+<br />
+
+To facilitate usage of `THD` and `FA3` in postraining of GPTPOSS, `THD` support for sink attention was enabled in TransformerEngine (TE) [^35] and `FA3` signature was safely guarded [^36].
 
 #### GRPO over PPO
 
@@ -315,7 +339,7 @@ This reduced the few days of `RLHF` job trained with MicroSoft `deepspeed-chat` 
 
 <br/>
 
-`GRPO` packs \(chosen, sampled answers : {R1, R2, ...}\) into a micro batch and brings even more simpler and quick reward function implementation [^21] [^22] without replicating itself with GPT backbones. Critic model is saved, and reward function is replaced with `better than average` target. The idea behind is that when we labeling data, it simetimes more easier to choose a preferred answer over sampled responses than explicitly choosing what we don't liek to see :
+`GRPO` packs \(chosen, sampled answers : {R1, R2, ...}\) into a micro batch and brings even more simpler and quick reward function implementation [^21] [^22] without replicating itself with GPT backbones. Critic model is saved, and reward function is replaced with `better than average` target. The idea behind is that when we labeling data, it simetimes more easier to choose a preferred answer over sampled responses than explicitly choosing what we don't love to see :
 
 ```
 Chosen from dataset:
@@ -436,7 +460,7 @@ What is worthy of noted is that Megatron disributed fwd has supported KV Cache:
 <div>
 <details>
 
-<summary>clock to open Distributed Megatron fwd with KV cache </summary>
+<summary>click to open Distributed Megatron fwd with KV cache </summary>
 
 ```python
 import numpy as np
@@ -816,7 +840,7 @@ By default, MPI uses `SSH` to construct control plane. In this system, we use `p
 
 <details>
 
-<summary>clock to open Slurm job submitter </summary>
+<summary>click to open Slurm job submitter </summary>
 
 ```bash
 # ...
@@ -873,7 +897,7 @@ After verifiction simple all reduction functions well, we use `Ray` for multinod
 
 <details>
 
-<summary>clock to open Ray Job Submitter </summary>
+<summary>click to open Ray Job Submitter </summary>
 
 ```bash
 export MASTER_ADDR=${MASTER_ADDR:-$this_addr}
@@ -1021,7 +1045,6 @@ ACTOR_PARALLEL="
     actor_rollout_ref.actor.megatron.expert_tensor_parallel_size=$ETP \
     actor_rollout_ref.actor.megatron.sequence_parallel=$SP \
 "
-
 
 ACTOR_REF_PARALLEL="
     actor_rollout_ref.ref.megatron.pipeline_model_parallel_size=$PP \
@@ -1377,6 +1400,14 @@ This fully open up the possibilities of `week-zero` support post training when m
 [^31] Diffusion-LM Improves Controllable Text Generation,  ,https://arxiv.org/pdf/2205.14217. Retrieved on 10 Feb.
 
 [^32] Blending dataset with INT16, yiakwy, https://github.com/NVIDIA/Megatron-LM/pull/604
+
+[^33] Add Megatron support of Thd for VeRL, ISEEKYAN, https://github.com/verl-project/verl/pull/706
+
+[^34] Add Megatron support of dynamic batch, ETOgaosion, https://github.com/verl-project/verl/pull/1617
+
+[^35] Add THD support for sink attention in GPTOSS, cuichenx , https://github.com/NVIDIA/TransformerEngine/pull/2568
+
+[^36] Solidate FA3 support in TE, yiakwy, https://github.com/NVIDIA/TransformerEngine/pull/2445
 
 [*] AI Suggestion from ChatGPT, we seek suggestion from AI and record it honestly; GPTOSS-120b without our SFT only achieves 13% in SimpleQA dataset
 
