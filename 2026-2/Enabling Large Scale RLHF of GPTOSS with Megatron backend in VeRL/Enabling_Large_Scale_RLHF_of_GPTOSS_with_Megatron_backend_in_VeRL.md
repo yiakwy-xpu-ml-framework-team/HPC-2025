@@ -215,7 +215,7 @@ For example, we already enabled continuous training of GPTOSS over **Megatron** 
 
 <br/>
 
-The naive idea is that by ustilizing flexible partition schemes of **Megatron***, we can lower memory used per GPU during rollout and training, and finally disable parameters offloading in post training, which significantly redcues our efficiency of training.
+The naive idea is that by ustilizing flexible partition schemes of **Megatron**, we can lower memory used per GPU during rollout and training, and finally disable parameters offloading in post training, which significantly redcues our efficiency of training.
 
 <br/>
 
