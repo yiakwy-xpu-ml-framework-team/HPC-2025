@@ -205,7 +205,7 @@ The objective `Step_3_5_Flash` is more general in agentic workflow than Qwen3-Co
 
 ## Related Works
 
-#### Solution Bundle : VeRL, vLLM/SGLang, FSDP, TE, Megatron-Core, Megatron-Bridge。
+#### Solution Bundle : VeRL, vLLM/SGLang, FSDP, TE, Megatron-Core, Megatron-Bridge
 
 GPTOSS has been quickly supported with `FSDP` and was recorded with `650 sec/step`, since `FSDP` is not a perfect choice for Expert Parallel.
 
