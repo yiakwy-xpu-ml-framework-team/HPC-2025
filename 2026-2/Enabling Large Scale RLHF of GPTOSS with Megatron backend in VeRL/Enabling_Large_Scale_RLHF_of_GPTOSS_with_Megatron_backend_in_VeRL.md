@@ -19,7 +19,7 @@ Authors : [LEI WANG](https://github.com/yiakwy-xpu-ml-framework-team) (yiakwang@
     * [Qwen3-next-coder](#qwen3-next-coder)
     * [Step-3_5-Flash](#step-3_5-flash)
 - [Related Works](#related-works)
-  + [Solution Bundle : VeRL, vLLM/SGLang, FSDP, Megatron-Core, Megatron-Bridge](#solution-bundle--verl-vllmsglang-fsdp-megatron-core-megatron-bridge)
+  + [Solution Bundle : VeRL, vLLM/SGLang, FSDP, Megatron-Core, Megatron-Bridge](#solution-bundle--verl-vllmsglang-fsdp-te-megatron-core-megatron-bridge)
   + [GRPO over PPO](#grpo-over-ppo)
   + [Decouple Inference from Training](#decouple-inference-from-training)
   + [FP8 for Post Training in Hopper Platform](#fp8-for-post-training-in-hopper-platform)
