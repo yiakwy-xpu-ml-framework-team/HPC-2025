@@ -1434,4 +1434,4 @@ Great appreciation to `Bai Yan` for the result disuccsion and solution guidance 
 [*] AI Suggestion from ChatGPT, we seek suggestion from AI and record it honestly; GPTOSS-120b without our SFT only achieves 13% in SimpleQA dataset
 
 ## Sponsor Sources
-[Huggingface](https://huggingface.co/blog/yiakwy-xpu-team/h800x104-disagg-serving-on-sglang)
+[Huggingface](https://huggingface.co/blog/yiakwy-xpu-team/enabling-large-scale-rlhf-of-gptoss-with-megatron#solution-bundle--verl-vllmsglang-fsdp-megatron-core-megatron-bridge)
