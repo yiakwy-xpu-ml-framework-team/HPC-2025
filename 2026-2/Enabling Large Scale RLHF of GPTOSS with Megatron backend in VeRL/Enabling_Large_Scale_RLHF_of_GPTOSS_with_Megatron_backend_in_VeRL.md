@@ -19,17 +19,18 @@ Authors : [LEI WANG](https://github.com/yiakwy-xpu-ml-framework-team) (yiakwang@
     * [Qwen3-next-coder](#qwen3-next-coder)
     * [Step-3_5-Flash](#step-3_5-flash)
 - [Related Works](#related-works)
-  + [Solution Bundle : VeRL, vLLM/SGLang, FSDP, Megatron-Core, Megatron-Bridge](#solution-boundle--verl--vllm--sglang--fsdp--megatron-core--megatron-bridge)
+  + [Solution Bundle : VeRL, vLLM/SGLang, FSDP, Megatron-Core, Megatron-Bridge](#solution-bundle--verl-vllmsglang-fsdp-megatron-core-megatron-bridge)
   + [GRPO over PPO](#grpo-over-ppo)
   + [Decouple Inference from Training](#decouple-inference-from-training)
-  + [FP8 for Post Training in Hopper Platform](#low-bits-for-post-training-in-hopper-platform)
-  + [Precision Verification](#verification)
-- [Main Experiment](#training-method)
-  + [Proprietary Slurm Post Training System](#multi-nodes-ray-system)
+  + [FP8 for Post Training in Hopper Platform](#fp8-for-post-training-in-hopper-platform)
+  + [Precision Verification](#precision-verification)
+- [Main Experiment](#main-experiment)
+  + [Proprietary Slurm Post Training System](#proprietary-slurm-post-training-system)
   + [Common Basic Config](#common-basic-config)
   + [Envrionmental Variables](#envrionmental-variables)
   + [Tunning Parameters](#tunning-parameters)
 - [Conclusion](#conclusion)
+- [Acknowledgement](#acknowledgement)
 - [Reference](#reference)
 - [Sponsor Sources](#sponsor-sources)
 
@@ -154,7 +155,7 @@ We first SFT GPTOSS BF16 model with proprietary question and answer dataset and 
 
 <br />
 
-Later I will publish an article to elabrate how and why MXFP4/NFP4 work and derived a new datatype for MoE efficiency.
+Later we will publish an article to elabrate how and why MXFP4/NVP4 work and derived a new datatype for MoE efficiency.
 
 <br />
 
@@ -168,11 +169,15 @@ In our non-official experiments, we follow the tokenizer used by OpenAI GPTOSS a
 
 Unlike `ModelSpec` used by OpenAI, our **objectives** of postraining expriment are specifically designed for decisions making, such as tools calling, **reasoning efforts deduction**, **user intention detection** and context retrieving within agentic workflow.
 
+<br />
+
 #### Related Models
 
 Besides GPTOSS, there are other small and flash models designed sepecifically for **agentic workflow**, catching up with attentions recently. I would like to take this opportunity to remind the readers, that
 
 > it is not only about size, but also about objectives we mentioned above.
+
+<br />
 
 ###### Qwen3-next-coder
 
@@ -181,6 +186,8 @@ Besides GPTOSS, there are other small and flash models designed sepecifically fo
 <br />
 
 Previously GPTOSS 120b achieved `76.3%` in SWE-bench verified [^17] versus maximum (turning on multi-rounds search to gather contexts) of `74.8%`, demonstrating our choosing of GPTOSS-120b as appetizer model in text tasks. However, the objective of Qwen3-Coder-Next [^18] is emphasized on tool calling and `recovery from execution failures` making it suitable for agentic workflow for coding and its usage of hybrid attention, aka `Gated DeltaNet` or `linear attention` and `Gated GQA`, extends context length significantly from `100K` to `256K`.
+
+<br />
 
 ###### Step-3_5-Flash
 
@@ -193,6 +200,8 @@ Both `Step_3_5_Flash` and `Qwen3-Coder-next` employs hybrid attention modes to e
 <br />
 
 The objective `Step_3_5_Flash` is more general in agentic workflow than Qwen3-Coder-Next, making it more suitable for agentic tasks, a perfect example that the model which is `better than` GPTOSS, is also `larger than` GPTOSS, calling GPTOSS appetizer.
+
+<br />
 
 ## Related Works
 
@@ -215,7 +224,7 @@ For example, we already enabled continuous training of GPTOSS over **Megatron** 
 
 <br/>
 
-The naive idea is that by ustilizing flexible partition schemes of **Megatron**, we can lower memory used per GPU during rollout and training, and finally disable parameters offloading in post training, which significantly redcues our efficiency of training.
+The naive idea is that by ustilizing flexible partition schemes of **Megatron**, we can lower memory used per GPU during rollout and training, and finally disable parameters offloading in post training, which significantly improves our efficiency of training.
 
 <br/>
 
@@ -223,7 +232,7 @@ The initial estimation of `EP` (`EDP`) for GPTOSS-120b (32 experts) and GPTOSS-2
 
 <br />
 
-Since `LLM` mainly [^31] uses **Auto Regressive** model architecture for parllel predicting of next words during training with `shift-one-word` loss, it is possible to keep `Megatron Core`, aka `mcore` unchanged, and use a light-weight layer to deal with model specification to store to distributed checkpoint and load from huggingface or safetensors format.
+Since `LLM` mainly [^31] uses **Auto Regressive** model architecture for parllel prediction of next words during training with `shift-one-word` loss, it is possible to keep `Megatron Core`, aka `mcore` unchanged, and use a light-weight layer to deal with model specification and IO, to store with distributed checkpoint and load from huggingface or safetensors format.
 
 <br />
 
@@ -236,7 +245,16 @@ Since `LLM` mainly [^31] uses **Auto Regressive** model architecture for parllel
 
 <br />
 
-This layer is now called `Megatron-Bridge`. Currently there are two branches of `Megatron Bridge`. One is the old version maintained by `CN` team called `vallina_mbridge` in VeRL, and the other is the branch maintained by U.S. team. We toggle with `vanilla_mbridge` variable :
+<figure>
+<p align="center">
+<img src="assets/img/fsdp_vs_megatron_8x8.png" alt="fsdp_vs_megatron_8x8" style="width:120%">
+</p>
+<figcaption style="text-align:center"> FSDP vs Megatron (8x8) </figcaption>
+</figure>
+
+<br />
+
+This layer is now called `Megatron-Bridge`. Currently there are two branches of `Megatron Bridge`. One is the old version maintained by `CN` team called `vallina_mbridge` in VeRL, and the other is the branch maintained by U.S. team. We toggle with `vanilla_mbridge` variable between two branches :
 
 ```bash
 # ...
@@ -383,7 +401,7 @@ loss = losses.mean()
 
 We follow this settings in VeRL to optimize our agentic workflow: labeling the favored answers, instructing LLM and enoding the outputs of the agentic workflow decisions at specific positions before calculating its per-token loss.
 
-#### Decouple Inferences from Training
+#### Decouple Inference from Training
 
 The current VeRL system, yet support non-collocated deployment recently [^1] [^3] [^24], was orignial desiged with limited resources, a lot of logics concentraing in parameters loading/offloading to fit GPU system memory. However, when we have more than `512` GPUs for post training, everything is different:
 
@@ -415,7 +433,7 @@ We have more than `1500` GB `CPU DRAM` memory per computing node, which is used 
 
 <br />
 
-As we scaling out from `1` node upto `16` nodes of H800 DGX SuperPod (total `128` GPU cards), the number of nodes for inference should be limited to `1` or `2` nodes since it is just enough to handle the large scale requesting [^25]. As for details how we scale, see the section of main experiment.
+As we are scaling out from `1` node upto `16` nodes of H800 DGX SuperPod (total `128` GPU cards), the number of nodes for inference should be limited to `1` or `2` nodes since it is just enough to handle the large scale requesting [^25]. As for details how we scale, see the section of main experiment.
 
 #### FP8 for Post Training in Hopper Platform
 
@@ -832,7 +850,7 @@ if __name__ == "__main__":
 
 #### Proprietary Slurm Post Training System
 
-Our slurm system has 1 head node and 64 computing nodes. It does not alows direct ssh communication from head node to compute nodes and between compute nodes. Hence we need some special settings to make it work.
+Our slurm system has 1 head node and 64 computing nodes. It neither alows direct `ssh` connections from head node to any comput nodes, nor between any of two compute nodes. Hence we need some special settings to get system work.
 
 <br />
 
@@ -1331,9 +1349,13 @@ By tuning over several paremters we got maximum throughput of 598 toks/sec and r
 
 ## Conclusion
 
-We verfied linearly scaling capability of post training from tiny scale to middle scale when parameters offloading fully disabled and decoupling inference from training is secured, reducing a `13` training jobs to `2` hrs.
+We verfied linearly scaling capability of post training from tiny scale to middle scale when parameters offloading fully disabled and decoupling inference from training is secured, reducing training jobs from `13` hrs to `2` hrs.
 
 This fully open up the possibilities of `week-zero` support post training when more and more open-weight models are released.
+
+## Acknowledgement
+
+Great appreciation to `Bai Yan` for the result disuccsion and solution guidance during the support of post training of **GPTOSS** with vLLM/SGLang backend. `Pan Kunhao` gave the detailed suggestions on Policy training strategy when comparing `PPO` and `DPO` algorithms. `Lei`, `Shengyao` and `Nick` work closely on solution building, dataset labeling, validation and kick off of full training on propirtary dataset upto 32k sequence length.
 
 ## Reference
 
